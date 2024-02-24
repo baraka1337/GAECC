@@ -1,7 +1,7 @@
 import pygad
 import pyldpc
 import time
-from code import bin_to_sign, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code
+from code import bin_to_sign, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code, EbN0_to_std
 import numpy as np
 #############################################
 ### constants ###
@@ -9,7 +9,8 @@ N = 49
 K = 24
 BP_MAX_ITER = 10
 BP_SNR = 3  # [db]
-SIGMA = (10 ** (-BP_SNR / 10))**0.5
+#SIGMA = (10 ** (-BP_SNR / 10))**0.5
+SIGMA = EbN0_to_std(5, K/N)
 # same std as in yoni's code
 # SIGMA = EbN0_to_std(7, K/N)
 # BP_SNR = -10 *BP_SNR math.log(SIGMA**2, 10)

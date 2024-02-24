@@ -123,6 +123,10 @@ def FER(x_pred, x_gt):
     return numpy.mean(numpy.any(x_pred != x_gt, dim=1).float()).item()
 
 
+def EbN0_to_std(EbN0, rate):
+    snr = EbN0 + 10. * np.log10(2 * rate)
+    return np.sqrt(1. / (10. ** (snr / 10.)))
+
 def generate_parity_check_matrix(G):
     k, n = G.shape
     H = numpy.hstack((G[:, k:].T, numpy.eye(n - k)))
