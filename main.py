@@ -36,22 +36,18 @@ def test_G(G, H=None, train=True):
     if train:
         x_vec = np.zeros((function_inputs.shape[1], G.shape[1]))
     else:
-        x_vec = G.T @ function_inputs
+        x_vec = G.T @ function_inputs % 2
         x_vec = x_vec.T
     y_vec = AWGN_channel(x_vec)
-    try:
-        x_pred_vec = pyldpc.decode(
-            H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
-        x_pred_vec = x_pred_vec.T
-    except Exception as e:
-        print(e)
-        raise Exception()
+
+    x_pred_vec = pyldpc.decode(H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
+    x_pred_vec = x_pred_vec.T
     return BER(x_vec, x_pred_vec)
 
 
 def fitness_func(ga_instance, solution, solution_idx):
     # create a systematic matrix from the solution
-    G = np.hstack((np.eye(K), solution.reshape(K, N-K))).astype(bool)
+    G = np.hstack((np.eye(K), solution.reshape(K, N-K)))
     H = generate_parity_check_matrix(G)
     # check if H/G is low parity density matrix - expected 20% sparsity or less
     sparsity_perc = np.sum(H) / np.size(H)
@@ -87,12 +83,13 @@ def on_generation(ga_instance):
         pop_fitness=ga_instance.last_generation_fitness)[1] - last_fitness
     solution, solution_fitness = ga_instance.best_solution(
         pop_fitness=ga_instance.last_generation_fitness)[:2]
-    G = np.hstack((np.eye(K), solution.reshape(K, N-K))).astype(bool)
+    G = np.hstack((np.eye(K), solution.reshape(K, N-K)))
     ber = test_G(G, train=False)
     print(f"Generation = {ga_instance.generations_completed}")
     print(f"Fitness    = {solution_fitness}")
     print(f"Change in Fitness     = {change_in_fitness}")
     print(f"BER value of best solution: {ber}")
+    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
     end_g = time.time()
     print(f"Generation Running Time: {end_g-start_g} [s]")
     start_g = end_g
@@ -111,7 +108,12 @@ if __name__ == '__main__':
         a=[0, 1], p=[0.8, 0.2], size=(num_initial_population, K*(N-K)))
     channel_func = AWGN_channel
     G, H = Get_Generator_and_Parity(Code("LDPC", 49, 24))
-    print(test_G(G, H, train=False))
+    ber = test_G(G.astype(bool), H, train=False)
+    print(f"BER: {ber}")
+    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
+    ber = test_G(G.astype(bool), H, train=True)
+    print(f"BER: {ber}")
+    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
     # import ipdb
     # ipdb.set_trace()
     ga_instance = pygad.GA(num_generations=30,
