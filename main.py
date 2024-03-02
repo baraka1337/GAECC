@@ -55,7 +55,7 @@ def test_G(G, H=None, train=False):
     else:
         llr_source = GaussianPriorSource()
         llr = llr_source([[batch_size, N], noise_var])
-    decoder = LDPCBPDecoder(pcm=H, num_iter=BP_MAX_ITER if train else 1000)
+    decoder = LDPCBPDecoder(pcm=H, num_iter=BP_MAX_ITER if train else 1000, cn_type="minsum")
 
     # x_pred_vec = pyldpc.decode(H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
     x_hat = decoder(llr)
