@@ -47,16 +47,19 @@ def test_G(G, H=None, train=True):
 
 def fitness_func(ga_instance, solution, solution_idx):
     # create a systematic matrix from the solution
-    G = np.hstack((np.eye(K), solution.reshape(K, N-K)))
+    G = G_from_solution(solution)
     H = generate_parity_check_matrix(G)
     # check if H/G is low parity density matrix - expected 20% sparsity or less
-    sparsity_perc = np.sum(H) / np.size(H)
-    if sparsity_perc >= 0.2:
-        # by definition of sparsity_perc, it is positive. so fitness 0 will by definition be minimal.
-        return 0
+    # sparsity_perc = np.sum(H) / np.size(H)
+    # if sparsity_perc >= 0.2:
+    #     # by definition of sparsity_perc, it is positive. so fitness 0 will by definition be minimal.
+    #     return 0
     ber = test_G(G, H)
-    fitness = 1/(ber + 1e-2) + \
-        1/(np.sum(solution)**2 + 10)
+    fitness = -np.log(ber + 1e-20)
+    # ber = test_G(G, H, train=False)
+    # fitness2 = -np.log(ber + 1e-20)
+    # fitness = (1/(ber + 1e-2))
+    # + 1/(np.sum(solution)**2 + 10))
     return fitness
 
 
@@ -151,7 +154,7 @@ if __name__ == '__main__':
     num_initial_population = 100
     sample_size = 1000
     function_inputs = np.random.randint(
-        2, size=(K, sample_size)).astype(bool)
+        2, size=(K, sample_size))
     initial_population = np.random.choice(
         a=[0, 1], p=[0.8, 0.2], size=(num_initial_population, K*(N-K)))
     channel_func = AWGN_channel
@@ -171,20 +174,17 @@ if __name__ == '__main__':
                            )
 
     # Running the GA to optimize the parameters of the function.
-    try:
-        ga_instance.run()
-    except:
-        # Returning the details of the best solution.
-        solution, solution_fitness, solution_idx = ga_instance.best_solution(
-            ga_instance.last_generation_fitness)
-        print(f"Parameters of the best solution : {solution}")
-        print(
-            f"Generator matrix of best solution: {np.hstack((np.eye(K), solution.reshape(K, N-K)))}")
-        print(f"Fitness value of the best solution = {solution_fitness}")
-        print(
-            f"BER value of best solution: {(solution_fitness - 1/(np.sum(solution)**2 + 10))**-1 - 1e-2}")
-        print(f"Index of the best solution : {solution_idx}")
-        # print(f"{ np.sum(solution*function_inputs)}")
-        print(f"Running Time: {time.time()-start} [s]")
-        ga_instance.plot_fitness()
-        ga_instance.save("best_sol")
+    ga_instance.run()
+    # Returning the details of the best solution.
+    solution, solution_fitness, solution_idx = ga_instance.best_solution(ga_instance.last_generation_fitness)
+    G = G_from_solution(solution)
+    ber = test_G(G, train=False)
+    print(f"Parameters of the best solution : {solution}")
+    print(f"Generator matrix of best solution:\n{G}")
+    print(f"Fitness value of the best solution = {solution_fitness}")
+    print(f"BER value of best solution: {ber}")
+    print(f"Index of the best solution : {solution_idx}")
+    # print(f"{ np.sum(solution*function_inputs)}")
+    print(f"Running Time: {time.time() - start} [s]")
+    ga_instance.plot_fitness()
+    ga_instance.save("best_sol")
