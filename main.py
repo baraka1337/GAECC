@@ -122,6 +122,29 @@ def on_generation(ga_instance):
         pop_fitness=ga_instance.last_generation_fitness)[1]
 
 
+def test_known_matrix(code_type="LDPC", n=49, k=24):
+    G, H = Get_Generator_and_Parity(Code(code_type, n, k))
+    ber = test_G(G, H, train=False)
+    print(f"BER: {ber}")
+    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
+    ber = test_G(G, H, train=True)
+    print(f"BER: {ber}")
+    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
+
+def test_known_matrix_2(code_type="LDPC", n=49, k=24):
+    G, H = Get_Generator_and_Parity(Code(code_type, n, k))
+    ber = test_G(G, H, train=False)
+    print(f"BER: {ber}")
+    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
+    ber = test_G(G, H, train=True)
+    print(f"BER: {ber}")
+    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
+
+
+def G_from_solution(solution):
+    return np.hstack((np.eye(K), solution.reshape(N - K, K).T))
+
+
 if __name__ == '__main__':
     # each matrix is a systematic matrix such that matrix.reshape((k, n)) is the systematic matrix
     start = time.time()
@@ -132,16 +155,8 @@ if __name__ == '__main__':
     initial_population = np.random.choice(
         a=[0, 1], p=[0.8, 0.2], size=(num_initial_population, K*(N-K)))
     channel_func = AWGN_channel
-    G, H = Get_Generator_and_Parity(Code("LDPC", 49, 24))
-    ber = test_G(G.astype(bool), H, train=False)
-    print(f"BER: {ber}")
-    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
-    ber = test_G(G.astype(bool), H, train=True)
-    print(f"BER: {ber}")
-    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
-    # import ipdb
-    # ipdb.set_trace()
-    ga_instance = pygad.GA(num_generations=30,
+    # test_known_matrix(code_type="LDPC", n=49, k=24)
+    ga_instance = pygad.GA(num_generations=5,
                            num_parents_mating=50,
                            sol_per_pop=20,
                            initial_population=initial_population,
