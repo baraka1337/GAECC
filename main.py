@@ -72,6 +72,31 @@ def mutation_func(offspring, ga_instance):
     return offspring
 
 
+def test_crossover_func():
+    num_parents_mating = 10
+    offspring_size = (10, 12)
+    ga_instance = type('MyClass', (), {"num_parents_mating": num_parents_mating})
+    parents = np.array([[i] * offspring_size[1] for i in range(ga_instance.num_parents_mating)])
+    offsprings = crossover_func(parents, offspring_size, ga_instance)
+    for offspring in offsprings:
+        print(offspring.reshape(3, 4).T)
+        print("")
+
+
+def crossover_func(parents, offspring_size, ga_instance):
+    offsprings = []
+    for _ in range(offspring_size[0]):
+        a, b = parents[np.random.choice(ga_instance.num_parents_mating, size=2, replace=False)]
+        split_points = np.random.randint(K, size=N - K)
+        offspring = np.concatenate(
+            [np.concatenate((a[i * K:i * K + s], b[i * K + s:(i + 1) * K])) for i, s in
+             enumerate(split_points)])
+
+        offsprings.append(offspring)
+
+    return np.array(offsprings)
+
+
 last_fitness = 0
 start_g = time.time()
 
@@ -125,6 +150,7 @@ if __name__ == '__main__':
                            # crossover_type=crossover_func,
                            mutation_type=mutation_func,
                            on_generation=on_generation,
+                           crossover_type=crossover_func,
                            # parallel_processing=['process', 2],
                            parallel_processing=['thread', 4]
                            )
