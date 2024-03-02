@@ -114,6 +114,10 @@ def EbN0_to_std(EbN0, rate):
     snr = EbN0 + 10. * numpy.log10(2 * rate)
     return numpy.sqrt(1. / (10. ** (snr / 10.)))
 
+def EbN0_to_snr(EbN0, rate):
+    snr = EbN0 + 10. * numpy.log10(2 * rate)
+    return snr
+
 
 def BER(x_pred, x_gt):
     return numpy.mean((x_pred != x_gt)).item()

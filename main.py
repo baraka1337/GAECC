@@ -1,48 +1,71 @@
 import pygad
 import pyldpc
 import time
-from code import bin_to_sign, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code, EbN0_to_std
+from code import bin_to_sign, sign_to_bin, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code, EbN0_to_std, EbN0_to_snr
 import numpy as np
+from sionna.fec.ldpc import LDPCBPDecoder
+from sionna.fec.linear import LinearEncoder
+from sionna.fec.utils import GaussianPriorSource
+from sionna.mapping import Demapper
+from sionna.mapping import Constellation, Mapper, Demapper
+from sionna.utils import BinarySource, compute_ber, BinaryCrossentropy, ebnodb2no, hard_decisions
+from sionna.channel import AWGN
+import tensorflow as tf
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        tf.config.experimental.set_memory_growth(gpus[0], True)
+    except RuntimeError as e:
+        print(e)
+# Avoid warnings from TensorFlow
+tf.get_logger().setLevel('ERROR')
+
 #############################################
 ### constants ###
-N = 49
-K = 24
+batch_size = 1024
+N = 49 # codeword length
+K = 24 # information bits per codeword
+M = 1 # number of bits per symbol
 BP_MAX_ITER = 10
-BP_SNR = 3  # [db]
-#SIGMA = (10 ** (-BP_SNR / 10))**0.5
-SIGMA = EbN0_to_std(5, K/N)
+noise_var = ebnodb2no(ebno_db=5,
+                      num_bits_per_symbol=M,
+                      coderate=K/N)
+SNR = EbN0_to_snr(5, K/N)
+G_MAT_SPARSITY_PRECENTAGE_UPPER_BOUND = 0.2
 # same std as in yoni's code
-# SIGMA = EbN0_to_std(7, K/N)
-# BP_SNR = -10 *BP_SNR math.log(SIGMA**2, 10)
-
-# function_inputs = np.random.uniform(-5, 5, size=sample_size)
 #############################################
 
 
-def AWGN_channel(x, sigma=SIGMA):
+def AWGN_channel(x, sigma=noise_var):
     mean = 0
     z = np.random.normal(mean, sigma, x.shape)
     y = bin_to_sign(x) + z
-    return y
+    return sign_to_bin(y)
 
 
 # H PCM is created such that H.shape = (n-k, n)
 # and the following propety is satisfied: H @ G.T % 2 = 0
 
 
-def test_G(G, H=None, train=True):
+def test_G(G, H=None, train=False):
     if H is None:
         H = generate_parity_check_matrix(G)
     if train:
-        x_vec = np.zeros((function_inputs.shape[1], G.shape[1]))
-    else:
-        x_vec = G.T @ function_inputs % 2
-        x_vec = x_vec.T
-    y_vec = AWGN_channel(x_vec)
+        llr_source = GaussianPriorSource()
+        llr = llr_source([[batch_size, N], noise_var])
 
-    x_pred_vec = pyldpc.decode(H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
-    x_pred_vec = x_pred_vec.T
-    return BER(x_vec, x_pred_vec)
+    else:
+        llr_source = GaussianPriorSource()
+        llr = llr_source([[batch_size, N], noise_var])
+    decoder = LDPCBPDecoder(pcm=H, num_iter=BP_MAX_ITER if train else 1000)
+
+    # x_pred_vec = pyldpc.decode(H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
+    x_hat = decoder(llr)
+    # reconstruct b_hat - code is systematic
+    b_hat = tf.slice(x_hat, [0,0], [batch_size, K])
+
+    ber = compute_ber(tf.zeros([batch_size, K]), b_hat)
+    return ber.numpy()
 
 
 def fitness_func(ga_instance, solution, solution_idx):
@@ -51,12 +74,11 @@ def fitness_func(ga_instance, solution, solution_idx):
     H = generate_parity_check_matrix(G)
     # check if H/G is low parity density matrix - expected 20% sparsity or less
     sparsity_perc = np.sum(H) / np.size(H)
-    if sparsity_perc >= 0.2:
+    if sparsity_perc >= G_MAT_SPARSITY_PRECENTAGE_UPPER_BOUND:
         # by definition of sparsity_perc, it is positive. so fitness 0 will by definition be minimal.
         return 0
     ber = test_G(G, H)
-    fitness = 1/(ber + 1e-2) + \
-        1/(np.sum(solution)**2 + 10)
+    fitness = 1/(ber + 1e-2)
     return fitness
 
 
@@ -101,19 +123,15 @@ if __name__ == '__main__':
     # each matrix is a systematic matrix such that matrix.reshape((k, n)) is the systematic matrix
     start = time.time()
     num_initial_population = 100
-    sample_size = 1000
-    function_inputs = np.random.randint(
-        2, size=(K, sample_size)).astype(bool)
     initial_population = np.random.choice(
         a=[0, 1], p=[0.8, 0.2], size=(num_initial_population, K*(N-K)))
-    channel_func = AWGN_channel
     G, H = Get_Generator_and_Parity(Code("LDPC", 49, 24))
-    ber = test_G(G.astype(bool), H, train=False)
+    ber = test_G(G, H, train=False)
     print(f"BER: {ber}")
     print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
-    ber = test_G(G.astype(bool), H, train=True)
-    print(f"BER: {ber}")
-    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
+    # ber = test_G(G.astype(bool), H, train=True)
+    # print(f"BER: {ber}")
+    # print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
     # import ipdb
     # ipdb.set_trace()
     ga_instance = pygad.GA(num_generations=30,
@@ -141,9 +159,9 @@ if __name__ == '__main__':
             f"Generator matrix of best solution: {np.hstack((np.eye(K), solution.reshape(K, N-K)))}")
         print(f"Fitness value of the best solution = {solution_fitness}")
         print(
-            f"BER value of best solution: {(solution_fitness - 1/(np.sum(solution)**2 + 10))**-1 - 1e-2}")
+            f"BER value of best solution: {(solution_fitness)**-1 - 1e-2}")
         print(f"Index of the best solution : {solution_idx}")
         # print(f"{ np.sum(solution*function_inputs)}")
         print(f"Running Time: {time.time()-start} [s]")
-        ga_instance.plot_fitness()
-        ga_instance.save("best_sol")
+        ga_instance.plot_fitness(savedir="~/GAECC/")
+        ga_instance.save("~/GAECC/best_sol")

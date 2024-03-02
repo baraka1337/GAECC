@@ -1,2 +1,4 @@
 pygad
+numpy
 pyldpc
+sionna
