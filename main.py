@@ -1,29 +1,27 @@
+import sys
+sys.path.insert(0, "./")
 import pygad
 import pyldpc
 import time
 from code import bin_to_sign, sign_to_bin, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code, EbN0_to_std, EbN0_to_snr
 import numpy as np
 from sionna.fec.ldpc import LDPCBPDecoder
-from sionna.fec.linear import LinearEncoder
+from sionna.fec.linear import LinearEncoder, OSDecoder
 from sionna.fec.utils import GaussianPriorSource
 from sionna.mapping import Demapper
 from sionna.mapping import Constellation, Mapper, Demapper
 from sionna.utils import BinarySource, compute_ber, BinaryCrossentropy, ebnodb2no, hard_decisions
 from sionna.channel import AWGN
 import tensorflow as tf
+import cProfile
 gpus = tf.config.list_physical_devices('GPU')
-if gpus:
-    try:
-        tf.config.experimental.set_memory_growth(gpus[0], True)
-    except RuntimeError as e:
-        print(e)
-# Avoid warnings from TensorFlow
-tf.get_logger().setLevel('ERROR')
+
+logger = tf.get_logger()
 
 #############################################
 ### constants ###
-N = 49 # codeword length
-K = 24 # information bits per codeword
+N = 121 # codeword length
+K = 80 # information bits per codeword
 M = 1 # number of bits per symbol
 BP_MAX_ITER = 10
 noise_var = ebnodb2no(ebno_db=5,
@@ -42,27 +40,38 @@ def AWGN_channel(x, sigma=noise_var):
 
 
 # H PCM is created such that H.shape = (n-k, n)
+# G generating matrix: G.shape = (k, n)
 # and the following propety is satisfied: H @ G.T % 2 = 0
-
-
 def test_G(G, H=None, train=False):
     if H is None:
         H = generate_parity_check_matrix(G)
     if train:
         llr_source = GaussianPriorSource()
-        llr = llr_source([[batch_size, N], noise_var])
+        llr = llr_source([[batch_size, H.shape[1]], noise_var])
 
     else:
         llr_source = GaussianPriorSource()
-        llr = llr_source([[batch_size, N], noise_var])
-    decoder = LDPCBPDecoder(pcm=H, num_iter=BP_MAX_ITER if train else 1000, cn_type="minsum")
+        llr = llr_source([[batch_size, H.shape[1]], noise_var])
+    # LDPC works llike shit decoder = LDPCBPDecoder(pcm=H, num_iter=BP_MAX_ITER if train else 1000)
+    decoder = OSDecoder(H, t=2, is_pcm=True)
+    # # without minibatches
+    # x_hat = decoder(llr)
+    # # reconstruct b_hat - code is systematic
+    # b_hat = tf.slice(x_hat, [0,0], [len(llr), G.shape[0]])
+    # ber = compute_ber(tf.zeros([len(llr), G.shape[0]]), b_hat)
 
-    # x_pred_vec = pyldpc.decode(H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
-    x_hat = decoder(llr)
-    # reconstruct b_hat - code is systematic
-    b_hat = tf.slice(x_hat, [0,0], [batch_size, K])
 
-    ber = compute_ber(tf.zeros([batch_size, K]), b_hat)
+    # testing minibatches
+    for i in range(int(batch_size // 100) + 1):
+        if i < batch_size // 100:
+            mini_batch = llr[100 * i:100 * (i+1),:]
+            # x_pred_vec = pyldpc.decode(H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
+        else:
+            mini_batch = llr[100 * i:, :]
+        x_hat = decoder(mini_batch)
+        # reconstruct b_hat - code is systematic
+        b_hat = tf.slice(x_hat, [0,0], [len(mini_batch), G.shape[0]])
+        ber += compute_ber(tf.zeros([len(mini_batch), G.shape[0]]), b_hat)
     return ber.numpy()
 
 
@@ -168,19 +177,19 @@ def test_known_matrix_2(code_type="LDPC", n=49, k=24):
 def G_from_solution(solution):
     return np.hstack((np.eye(K), solution.reshape(N - K, K).T))
 
-
 if __name__ == '__main__':
     # each matrix is a systematic matrix such that matrix.reshape((k, n)) is the systematic matrix
     start = time.time()
-    num_initial_population = 100
-    batch_size = 1000
+    num_initial_population = 200
+    batch_size = 500
+    num_generations=500
     function_inputs = np.random.randint(
         2, size=(K, batch_size))
     initial_population = np.random.choice(
         a=[0, 1], p=[0.8, 0.2], size=(num_initial_population, K*(N-K)))
     channel_func = AWGN_channel
-    test_known_matrix(code_type="LDPC", n=49, k=24)
-    ga_instance = pygad.GA(num_generations=5,
+    # test_known_matrix(code_type="LDPC", n=49, k=24)
+    ga_instance = pygad.GA(num_generations=num_generations,
                            num_parents_mating=50,
                            sol_per_pop=20,
                            initial_population=initial_population,
@@ -191,11 +200,13 @@ if __name__ == '__main__':
                            on_generation=on_generation,
                            crossover_type=crossover_func,
                            # parallel_processing=['process', 2],
-                           parallel_processing=['thread', 4]
+                           parallel_processing=['thread', 16]
                            )
 
     # Running the GA to optimize the parameters of the function.
-    ga_instance.run()
+    with cProfile.Profile() as pr:
+        ga_instance.run()
+        pr.dump_stats(f"./profiler_stats_for_n_{N}_k_{K}_initpop_{num_initial_population}_gencount_{num_generations}")
     # Returning the details of the best solution.
     solution, solution_fitness, solution_idx = ga_instance.best_solution(ga_instance.last_generation_fitness)
     G = G_from_solution(solution)
@@ -207,5 +218,5 @@ if __name__ == '__main__':
     print(f"Index of the best solution : {solution_idx}")
     # print(f"{ np.sum(solution*function_inputs)}")
     print(f"Running Time: {time.time() - start} [s]")
-    ga_instance.plot_fitness()
-    ga_instance.save("best_sol")
+    ga_instance.plot_fitness(savedir="./")
+    ga_instance.save(f"best_sol_for_n_{N}_k_{K}_initpop_{num_initial_population}_gencount_{num_generations}")
