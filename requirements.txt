@@ -2,3 +2,5 @@ pygad
 numpy
 pyldpc
 sionna
+pyldpc
+tqdm
