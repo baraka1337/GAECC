@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from code import bin_to_sign, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code, EbN0_to_std
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
-from copy import copy
+import pickle
 
 BP_MAX_ITER = 5
 BP_SNR = 3  # [db]
@@ -86,7 +86,7 @@ class GA:
                 self.fitness_single(solution, i)
         self.fitness_result_normalize = self.fitness_result / np.sum(self.fitness_result)
         best_solution_index = np.argmax(self.fitness_result)
-        self.best_solution = copy(self.population[best_solution_index])
+        self.best_solution = self.population[best_solution_index].copy()
         self.best_solution_fitness = self.fitness_result[best_solution_index]
         self.bests_nlog.append(self.nlog[best_solution_index])
 
@@ -156,6 +156,16 @@ class GA:
         # plt.show()
         plt.savefig("2.png")
 
+    @staticmethod
+    def load_from_file(filename):
+        with open(filename, 'rb') as file:
+            ga = pickle.load(file)
+        return ga
+
+    def dump_to_file(self, filename):
+        with open(filename, 'wb') as file:
+            pickle.dump(self, file)
+
 
 def AWGN_channel(x, sigma):
     mean = 0
@@ -189,17 +199,27 @@ def G_from_solution(solution, k):
     return np.hstack((np.eye(k), solution))
 
 
-if __name__ == '__main__':
-    num_initial_population = 700
-    ga = GA(
-        k=24,
-        n=49,
-        num_initial_population=num_initial_population,
-        sample_size=1000,
-        num_parents_mating=int(num_initial_population * 0.2),
-        offspring_size=int(num_initial_population * 0.8),
-        p_mutation=0.005,
-        num_generations=50
-    )
+def run(from_file=False, filename='ga.pickle'):
+    if not from_file:
+        num_initial_population = 700
+        ga = GA(
+            k=24,
+            n=49,
+            num_initial_population=num_initial_population,
+            sample_size=1000,
+            num_parents_mating=int(num_initial_population * 0.2),
+            offspring_size=int(num_initial_population * 0.8),
+            p_mutation=0.005,
+            num_generations=50
+        )
 
-    ga.run()
+        ga.run()
+
+        ga.dump_to_file(filename)
+    else:
+        ga = GA.load_from_file(filename)
+        ga.end()
+
+
+if __name__ == '__main__':
+    run()
