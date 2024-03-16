@@ -4,6 +4,7 @@ import pygad
 import pyldpc
 import time
 from code import bin_to_sign, sign_to_bin, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code, EbN0_to_std, EbN0_to_snr
+import scipy as sp
 import numpy as np
 from sionna.fec.ldpc import LDPCBPDecoder
 from sionna.fec.linear import LinearEncoder, OSDecoder
@@ -20,8 +21,8 @@ logger = tf.get_logger()
 
 #############################################
 ### constants ###
-N = 121 # codeword length
-K = 80 # information bits per codeword
+N = 63 # codeword length
+K = 51 # information bits per codeword
 M = 1 # number of bits per symbol
 BP_MAX_ITER = 10
 noise_var = ebnodb2no(ebno_db=5,
@@ -45,33 +46,43 @@ def AWGN_channel(x, sigma=noise_var):
 def test_G(G, H=None, train=False):
     if H is None:
         H = generate_parity_check_matrix(G)
+    n = H.shape[1]
+    k = G.shape[0]
     if train:
+        t=4
         llr_source = GaussianPriorSource()
-        llr = llr_source([[batch_size, H.shape[1]], noise_var])
-
+        llr = llr_source([[batch_size, n], noise_var])
     else:
+        t=2
         llr_source = GaussianPriorSource()
-        llr = llr_source([[batch_size, H.shape[1]], noise_var])
+        llr = llr_source([[batch_size, n], noise_var])
     # LDPC works llike shit decoder = LDPCBPDecoder(pcm=H, num_iter=BP_MAX_ITER if train else 1000)
-    decoder = OSDecoder(H, t=2, is_pcm=True)
-    # # without minibatches
-    # x_hat = decoder(llr)
-    # # reconstruct b_hat - code is systematic
-    # b_hat = tf.slice(x_hat, [0,0], [len(llr), G.shape[0]])
-    # ber = compute_ber(tf.zeros([len(llr), G.shape[0]]), b_hat)
+    
+    # OSDecoder order t
+    decoder = OSDecoder(H, t=t, is_pcm=True)
+    # Trying to determin batch_size given n, t
+
+
+    # # # without minibatches
+    x_hat = decoder(llr)
+    # reconstruct b_hat - code is systematic
+    b_hat = tf.slice(x_hat, [0,0], [len(llr), k])
+    ber = compute_ber(tf.zeros([len(llr), k]), b_hat)
 
 
     # testing minibatches
-    for i in range(int(batch_size // 100) + 1):
-        if i < batch_size // 100:
-            mini_batch = llr[100 * i:100 * (i+1),:]
-            # x_pred_vec = pyldpc.decode(H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
-        else:
-            mini_batch = llr[100 * i:, :]
-        x_hat = decoder(mini_batch)
-        # reconstruct b_hat - code is systematic
-        b_hat = tf.slice(x_hat, [0,0], [len(mini_batch), G.shape[0]])
-        ber += compute_ber(tf.zeros([len(mini_batch), G.shape[0]]), b_hat)
+    # ber=0
+    # for i in range(int(batch_size // 100) + 1):
+    #     if i < batch_size // 100:
+    #         mini_batch = llr[100 * i:100 * (i+1),:]
+    #         # x_pred_vec = pyldpc.decode(H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
+    #     else:
+    #         mini_batch = llr[100 * i:, :]
+    #     x_hat = decoder(mini_batch)
+    #     # reconstruct b_hat - code is systematic
+    #     b_hat = tf.slice(x_hat, [0,0], [len(mini_batch), G.shape[0]])
+    #     ber += compute_ber(tf.zeros([len(mini_batch), G.shape[0]]), b_hat)
+    # print(ber)
     return ber.numpy()
 
 
@@ -205,8 +216,9 @@ if __name__ == '__main__':
 
     # Running the GA to optimize the parameters of the function.
     with cProfile.Profile() as pr:
-        ga_instance.run()
-        pr.dump_stats(f"./profiler_stats_for_n_{N}_k_{K}_initpop_{num_initial_population}_gencount_{num_generations}")
+        with tf.xla.experimental.jit_scope():
+            ga_instance.run()
+        pr.dump_stats(f"./profiler_stats_for_n_{N}_k_{K}_initpop_{num_initial_population}_gencount_{num_generations}_bsize_{batch_size}_pmating_50_sol_per_pop_20")
     # Returning the details of the best solution.
     solution, solution_fitness, solution_idx = ga_instance.best_solution(ga_instance.last_generation_fitness)
     G = G_from_solution(solution)
