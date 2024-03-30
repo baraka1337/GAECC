@@ -1,24 +1,23 @@
 import sys
 import os
 sys.path.insert(0, "./")
-os.environ["TF_ENABLE_XLA"] = '0'
-os.environ["TF_XLA_ENABLE_XLA_DEVICES"] = '0'
-# os.environ["TF_XLA_FLAGS"] = '--tf_xla_auto_jit=1, --tf_xla_enable_xla_devices'
-os.environ["TF_XLA_FLAGS"] = ''
+os.environ["TF_ENABLE_XLA"] = '1'
+os.environ["TF_XLA_ENABLE_XLA_DEVICES"] = '1'
+os.environ["TF_XLA_FLAGS"] = '--tf_xla_auto_jit=1, --tf_xla_enable_xla_devices'
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-from code import bin_to_sign, sign_to_bin, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code, EbN0_to_std
+import tensorflow as tf
 import pygad
 import pyldpc
 import time
+from code import bin_to_sign, sign_to_bin, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code, EbN0_to_std, EbN0_to_snr
 import scipy as sp
 import numpy as np
-import sionna
 from sionna.fec.ldpc import LDPCBPDecoder
 from sionna.fec.linear import OSDecoder
-from sionna.fec.utils import GaussianPriorSource
-from sionna.utils import compute_ber, BinarySource
+from sionna.fec.utils import GaussianPriorSource, gm2pcm
+from sionna.utils import compute_ber, ebnodb2no, BinarySource
 from sionna.channel import AWGN, BinarySymmetricChannel
-import tensorflow as tf
+
 import cProfile
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy
@@ -34,7 +33,7 @@ def config_tf():
             for gpu in gpus:
                 # tf.config.set_logical_device_configuration(
                 #     gpu,
-                #     [tf.config.LogicalDeviceConfiguration(memory_limit=5000)])
+                #     [tf.config.LogicalDeviceConfiguration(memory_limit=30000)])
                 tf.config.experimental.set_memory_growth(gpu, True)
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
             print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
@@ -54,9 +53,8 @@ def config_tf():
 # SNR = EbN0_to_snr(5, K/N)
 # same std as in yoni's code
 #############################################
-
+BP_SNR = 3 # [db]
 BP_MAX_ITER = 5
-BP_SNR = 3  # [db]
 
 def AWGN_channel_calc_LLR(y, sigma):
     return 2*y/(sigma**2)
@@ -99,7 +97,7 @@ class GA:
         self.sample_size = sample_size
         self.num_parents_mating = num_parents_mating
         initial_population_size = (self.num_initial_population, self.k, (self.n - self.k))
-        self.population = np.random.choice(a=[0, 1], size=initial_population_size)
+        self.population = tf.Variable(tf.convert_to_tensor(np.random.choice(a=[0,1], size=initial_population_size), dtype=tf.float32))
         self.channel_func = AWGN_channel
         self.fitness_result = np.zeros(num_initial_population)
         self.nlog = np.zeros(num_initial_population)
@@ -115,13 +113,11 @@ class GA:
         self.sigma = EbN0_to_std(ebn0, self.k / self.n)
         self.bests_nlog = []
 
-
     def fitness_single(self, solution, i, gamma=3):
         # create a systematic matrix from the solution
         delta = 1e-20
         G = G_from_solution(solution, self.k)
         H = generate_parity_check_matrix(G)
-        # H = gm2pcm(G)
         ber = test_G(G, self.sample_size, self.sigma, H)
         fitness = (1 / (ber + delta)) ** gamma
         self.fitness_result[i] = fitness
@@ -129,9 +125,17 @@ class GA:
 
     def fitness(self):
         with tf.profiler.experimental.Trace(f"Fitness"):
-            for i, solution in tqdm(enumerate(self.population), total=self.num_initial_population):
+            # apply_function_with_threads(self.fitness_single, enumerate(self.population))
+            dataset = tf.data.Dataset.from_tensor_slices(self.population)
+
+            # Enumerate the dataset
+            enumerated_dataset = dataset.enumerate()  # start specifies the offset for the enumeration
+
+            for i, solution in tqdm(enumerated_dataset, total=self.num_initial_population):
                 if self.fitness_result[i] == 0:
+                    solution = tf.cast(solution, dtype=tf.int32).numpy()
                     self.fitness_single(solution, i)
+                    tf.keras.backend.clear_session()
             self.fitness_result_normalize = self.fitness_result / np.sum(self.fitness_result)
             best_solution_index = np.argmax(self.fitness_result)
             self.best_solution = copy(self.population[best_solution_index])
@@ -139,37 +143,64 @@ class GA:
             self.bests_nlog.append(self.nlog[best_solution_index])
 
     def crossover(self):
-        indices_of_parents_mating = np.random.choice(self.num_initial_population, size=self.num_parents_mating,
-                                                     p=self.fitness_result_normalize, replace=False)
-        indices = np.random.choice(self.num_parents_mating, size=(2, self.offspring_size))
-        # selected_parents_normalized_p = self.fitness_result_normalize[indices_of_parents_mating] / np.sum(self.fitness_result_normalize[indices_of_parents_mating])
-        # indices = np.random.choice(self.num_parents_mating, size=(2, self.offspring_size), p=selected_parents_normalized_p)
-        a = self.population[indices_of_parents_mating][indices[0]]
-        b = self.population[indices_of_parents_mating][indices[1]]
+        # Selecting parents based on the normalized fitness results
+        indices_of_parents_mating = tf.random.categorical(tf.math.log([self.fitness_result_normalize]), self.num_parents_mating, dtype=tf.int32)[0]
+        
+        # Select random indices for crossover
+        indices = tf.random.uniform(shape=(2, self.offspring_size), minval=0, maxval=self.num_parents_mating, dtype=tf.int32)
+        
+        # Gather selected parents
+        selected_parents = tf.gather(self.population, indices_of_parents_mating)
+        a = tf.gather(selected_parents, indices[0], axis=0)
+        b = tf.gather(selected_parents, indices[1], axis=0)
 
-        random_points = np.random.randint(self.k, size=(self.offspring_size, self.n - self.k))
-        mask = np.arange(self.k) < random_points[:, :, None]
-        mask = mask.transpose((0, 2, 1))
-        offsprings = np.where(mask, a, b)
+        # Generate random crossover points
+        random_points = tf.random.uniform(shape=(self.offspring_size, self.n - self.k), minval=0, maxval=self.k, dtype=tf.int32)
+        
+        # Create mask for crossover
+        mask = tf.range(self.k) < random_points[..., tf.newaxis]
+        mask = tf.transpose(mask, perm=[0, 2, 1])
+        
+        # Apply crossover mask
+        offsprings = tf.where(mask, a, b)
 
         return offsprings
 
     def mutation(self, offsprings):
-        mutation_mask = np.random.rand(*offsprings.shape) < self.p_mutation
-        offsprings[mutation_mask] ^= 1
+        # Assuming offsprings is a TensorFlow tensor
+        offsprings_shape = tf.shape(offsprings)
+        mutation_mask = tf.random.uniform(offsprings_shape) < self.p_mutation
+        
+        # XOR operation is not directly supported between a boolean mask and integer tensors in TensorFlow,
+        # so we convert the boolean mask to the same dtype as offsprings and perform bitwise XOR where mutation_mask is True.
+        mutation_values = tf.cast(mutation_mask, dtype=tf.int32) * tf.constant(1, dtype=tf.int32)
+        offsprings = tf.bitwise.bitwise_xor(tf.cast(offsprings, dtype=tf.int32), mutation_values)
+
+        return offsprings
 
     def run(self):
         plt.figure()
         self.start_generation_time = time.time()
-        for i in range(self.num_generations):
+        for i in tf.range(self.num_generations):
             self.fitness()
             offsprings = self.crossover()
-            self.mutation(offsprings)
-            argsort_result = np.argsort(self.fitness_result)
+            offsprings = tf.cast(self.mutation(offsprings), dtype=tf.float32)
+            
+            # Using TensorFlow operations
+            argsort_result = tf.argsort(self.fitness_result, direction='ASCENDING')
             offsprings_indices = argsort_result[:self.offspring_size]
-            self.population[offsprings_indices] = offsprings
+
+            def update_population(offspring, index):
+                self.population[index].assign(tf.cast(offspring, dtype=tf.float32))
+                return self.population
+            # Updating population with new offsprings
+            tf.map_fn(lambda x: update_population(offsprings[x], offsprings_indices[x]), tf.range(self.offspring_size), dtype=tf.float32)
+            
             self.end_generation(i)
-            self.fitness_result[offsprings_indices] = np.zeros(self.offspring_size)
+            
+            # Resetting fitness results of the updated population members
+            # tf.scatter_update(self.fitness_result, offsprings_indices, tf.zeros(self.offspring_size))
+            self.fitness_result[offsprings_indices.numpy()] = np.zeros(self.offspring_size)
         self.end()
 
     def end_generation(self, generations_index):
@@ -210,7 +241,6 @@ class GA:
 
 def AWGN_channel(x, sigma):
     mean = 0
-    # z = tf.random.normal(x.shape, mean, sigma)
     z = np.random.normal(mean, sigma, x.shape)
     y = bin_to_sign(x) + z
     return y
@@ -225,6 +255,8 @@ def test_G_sionna_os_decoder(G, sample_size, sigma, H=None, train=True):
         H = generate_parity_check_matrix(G)
     n = H.shape[1]
     k = G.shape[0]
+    # llr_source = GaussianPriorSource()
+    # llr = llr_source([[sample_size, n], noise_var])
     x_vec = np.zeros((sample_size, G.shape[1]))
     # AWGN channel
     y_vec = AWGN_channel(x_vec, sigma)
@@ -250,6 +282,8 @@ def test_G_sionna_os_decoder(G, sample_size, sigma, H=None, train=True):
     b_hat = tf.slice(x_hat, [0,0], [len(llr), k])
     return compute_ber(x_vec, x_hat)
 
+
+
 # H PCM is created such that H.shape = (n-k, n)
 # G generating matrix: G.shape = (k, n)
 # and the following propety is satisfied: H @ G.T % 2 = 0
@@ -259,12 +293,12 @@ def test_G_sionna_ldpc_decoder(G, sample_size, sigma, H=None, train=True):
     n = H.shape[1]
     k = G.shape[0]
     
-    # if train: # training is on all zero codeword
-        # x_vec = tf.zeros((n, sample_size))
-    # else: #  generating actual data
-    bs = BinarySource()
-    data_vec = bs((sample_size, k))
-    x_vec = G.T @  tf.transpose(data_vec) % 2
+    if train: # training is on all zero codeword
+        x_vec = np.zeros((n, sample_size))
+    else: #  generating actual data
+        bs = BinarySource()
+        data_vec = bs((sample_size, k))
+        x_vec = G.T @  tf.transpose(data_vec) % 2
     # AWGN channel
     y_vec = AWGN_channel(x_vec, sigma)
     # minus because decoder expects log(p(x=1)/p(x=0)) and the AWGN_channel_calc_LLR function
@@ -274,18 +308,23 @@ def test_G_sionna_ldpc_decoder(G, sample_size, sigma, H=None, train=True):
     # Binary Symmetric Channel
     # bsc = BinarySymmetricChannel(return_llrs=True)
     # llr = bsc((x_vec, 0.1))
+    # if train:
+    #     t=2
+    # else:
+    #     t=2
     # H = H>=1
     # H = sp.sparse.csc_matrix(H)
-    decoder = LDPCBPDecoder(pcm=H, num_iter=BP_MAX_ITER  if train else 100)
+    decoder = LDPCBPDecoder(pcm=H, num_iter=BP_MAX_ITER  if train else 1000)
 
     # # # without minibatches
     x_hat = decoder(llr)
 
-    # reconstruct original data if needed - code is systematic
-    # b_hat = tf.slice(x_hat, [0,0], [len(llr), k])
-    return compute_ber(tf.transpose(x_vec), x_hat)
+    # reconstruct b_hat - code is systematic
+    b_hat = tf.slice(x_hat, [0,0], [len(llr), k])
 
-def test_G(G, sample_size, sigma, H=None, train=True, simulate_G_func=test_G_sionna_os_decoder):
+    return compute_ber(tf.cast(tf.transpose(x_vec), dtype=tf.float32), x_hat)
+
+def test_G(G, sample_size, sigma, H=None, train=True, simulate_G_func=test_G_sionna_ldpc_decoder):
     if simulate_G_func is not None:
         return simulate_G_func(G, sample_size, sigma, H, train)
     if H is None:
@@ -306,17 +345,21 @@ def test_G(G, sample_size, sigma, H=None, train=True, simulate_G_func=test_G_sio
     return BER(x_vec, x_pred_vec)
 
 
+
+
 def G_from_solution(solution, k):
     return np.hstack((np.eye(k), solution))
+
 
 if __name__ == '__main__':
     config_tf()
     num_initial_population = 700
-    RESULTS_DIR = "./results_main_sionna_os_decoder"
+    RESULTS_DIR = "./results_tf_main_sionna_decoder"
     options = tf.profiler.experimental.ProfilerOptions(host_tracer_level = 3,
                                                    python_tracer_level = 1,
                                                    device_tracer_level = 1)
     tf.profiler.experimental.start(os.path.join(RESULTS_DIR, 'tensorboard_logs'), options)  # Logs will be saved in the 'logs' directory
+    
     ga = GA(
         k=24,
         n=49,

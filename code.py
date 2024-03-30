@@ -1,5 +1,4 @@
 import os
-
 import numpy
 import numpy as np
 
@@ -135,3 +134,10 @@ def generate_parity_check_matrix(G):
     k, n = G.shape
     H = numpy.hstack((G[:, k:].T, numpy.eye(n - k)))
     return H
+
+"""
+def generate_parity_check_matrix(G):
+    k, n = G.shape
+    H = tf.concat((tf.transpose(G[:, k:]), tf.eye(n - k)), axis=1)
+    return H
+"""
