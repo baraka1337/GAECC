@@ -17,7 +17,7 @@ def row_reduce(mat, ncols=None):
         idxs = np.nonzero(mat_row_reduced[:, j])[0].tolist()
         idxs.remove(p)
         mat_row_reduced[idxs, :] = mat_row_reduced[idxs,
-                                                   :] ^ mat_row_reduced[p, :]
+                                   :] ^ mat_row_reduced[p, :]
         p += 1
         if p == mat_row_reduced.shape[0]:
             break
@@ -41,9 +41,9 @@ def get_standard_form(pc_matrix_):
             rows_ones = ii + np.where(pc_matrix[ii:, ii])[0]
             if len(rows_ones) == 0:
                 new_shift = np.arange(
-                    ii, min(pc_matrix.shape) - 1).tolist()+[min(pc_matrix.shape) - 1, next_col]
+                    ii, min(pc_matrix.shape) - 1).tolist() + [min(pc_matrix.shape) - 1, next_col]
                 old_shift = np.arange(
-                    ii + 1, min(pc_matrix.shape)).tolist()+[next_col, ii]
+                    ii + 1, min(pc_matrix.shape)).tolist() + [next_col, ii]
                 pc_matrix[:, new_shift] = pc_matrix[:, old_shift]
                 next_col += 1
             else:
@@ -75,9 +75,9 @@ def Get_Generator_and_Parity(code, standard_form=False):
     path_pc_mat = os.path.join(
         'Codes_DB', f'{code.code_type}_N{str(n)}_K{str(k)}')
     if code.code_type in ['POLAR', 'BCH']:
-        ParityMatrix = np.loadtxt(path_pc_mat+'.txt')
+        ParityMatrix = np.loadtxt(path_pc_mat + '.txt')
     elif code.code_type in ['CCSDS', 'LDPC', 'MACKAY']:
-        ParityMatrix = Read_pc_matrixrix_alist(path_pc_mat+'.alist')
+        ParityMatrix = Read_pc_matrixrix_alist(path_pc_mat + '.alist')
     else:
         raise Exception(f'Wrong code {code.code_type}')
     if standard_form and code.code_type not in ['CCSDS', 'LDPC', 'MACKAY']:
@@ -126,6 +126,11 @@ def FER(x_pred, x_gt):
 def EbN0_to_std(EbN0, rate):
     snr = EbN0 + 10. * np.log10(2 * rate)
     return np.sqrt(1. / (10. ** (snr / 10.)))
+
+
+def EbN0_to_snr(EbN0, rate):
+    return EbN0 + 10. * np.log10(2 * rate)
+
 
 def generate_parity_check_matrix(G):
     k, n = G.shape
