@@ -54,6 +54,8 @@ class GA:
             p_mutation=0.05,
             num_generations=5,
             ebn0=5,
+            delta=1e-20,
+            gamma=3,
     ):
         self.k = k
         self.n = n
@@ -77,8 +79,8 @@ class GA:
         self.snr = EbN0_to_snr(ebn0, self.k / self.n)
         self.bests_nlog = []
 
-        self.delta = 1e-20
-        self.gamma = 3
+        self.delta = delta
+        self.gamma = gamma
         self.max_fitness = (1 / self.delta) ** self.gamma
 
     def fitness(self):
