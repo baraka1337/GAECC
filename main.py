@@ -82,10 +82,10 @@ class GA:
         self.delta = delta
         self.gamma = gamma
         self.max_fitness = (1 / self.delta) ** self.gamma
+        self.all_nlog = []
 
     def fitness(self):
-        apply_function_with_threads(fitness_single, self.population, self.fitness_result, self.k, self.sample_size,
-                                    self.sigma, self.snr, self.delta, self.gamma, )
+        apply_function_with_threads(fitness_single, self.population, self.fitness_result, self.k, self.sample_size, self.sigma, self.snr, self.delta, self.gamma)
         # for i, solution in tqdm(enumerate(self.population), total=self.num_initial_population):
         #     self.fitness_single(i, solution)
 
@@ -126,13 +126,11 @@ class GA:
             self.fitness_result[offsprings_indices] = np.zeros(self.offspring_size)
             if self.best_solution_fitness == self.max_fitness:
                 break
-        self.end()
 
     def end_generation(self, generations_index):
         change_in_fitness = self.best_solution_fitness - self.last_fitness
         G = G_from_solution(self.best_solution, self.k)
         ber = test_G(G, self.sample_size * 10, self.sigma, self.snr)
-        # ber = np.exp(-nlog)
         nlog = -np.log(ber)
         self.bests_nlog.append(nlog)
         print(f"Generation = {generations_index}")
@@ -144,6 +142,8 @@ class GA:
         print(f"Generation Running Time: {end_generation_time - self.start_generation_time} [s]")
         self.start_generation_time = end_generation_time
         self.last_fitness = self.best_solution_fitness
+        generation_nlog = -np.log(self.fitness_result ** (-1/self.gamma) - self.delta)
+        self.all_nlog.append(generation_nlog)
 
     def end(self):
         plt.figure()
@@ -219,7 +219,3 @@ def run(from_file=False, filename='ga.pickle'):
     else:
         ga = GA.load_from_file(filename)
         ga.end()
-
-
-if __name__ == '__main__':
-    run()
