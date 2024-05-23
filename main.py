@@ -1,16 +1,13 @@
+from code import bin_to_sign, BER, generate_parity_check_matrix, EbN0_to_std, EbN0_to_snr  # type: ignore
+from matplotlib import pyplot as plt
+import pyldpc
+import numpy as np
+from tqdm import tqdm
 import pickle
 import time
 from concurrent.futures import ProcessPoolExecutor
 
-import numpy as np
-import pyldpc
-from matplotlib import pyplot as plt
-
-from code import bin_to_sign, BER, generate_parity_check_matrix, EbN0_to_std, EbN0_to_snr
-
 BP_MAX_ITER = 5
-
-from tqdm import tqdm
 
 
 def apply_function_with_threads(func, iterator, result, *args, **kwargs):
