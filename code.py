@@ -16,7 +16,8 @@ def row_reduce(mat, ncols=None):
         mat_row_reduced[[p, idxs[0]], :] = mat_row_reduced[[idxs[0], p], :]
         idxs = np.nonzero(mat_row_reduced[:, j])[0].tolist()
         idxs.remove(p)
-        mat_row_reduced[idxs, :] = mat_row_reduced[idxs, :] ^ mat_row_reduced[p, :]
+        mat_row_reduced[idxs, :] = mat_row_reduced[idxs,
+                                                   :] ^ mat_row_reduced[p, :]
         p += 1
         if p == mat_row_reduced.shape[0]:
             break
@@ -109,10 +110,6 @@ def bin_to_sign(x):
     return 1 - 2 * x
 
 
-def EbN0_to_std(EbN0, rate):
-    snr = EbN0 + 10. * numpy.log10(2 * rate)
-    return numpy.sqrt(1. / (10. ** (snr / 10.)))
-
 
 def BER(x_pred, x_gt):
     return numpy.mean((x_pred != x_gt)).item()
@@ -130,9 +127,12 @@ def EbN0_to_std(EbN0, rate):
 def EbN0_to_snr(EbN0, rate):
     return EbN0 + 10. * np.log10(2 * rate)
 
+def snr_to_EbN0(snr, rate):
+    return snr - 10. * np.log10(2 * rate)
+
 
 def generate_parity_check_matrix(G):
     k, n = G.shape
-    H = numpy.hstack((G[:, k:].T ^ 1, numpy.eye(n - k)))
+    H = numpy.hstack((G[:, k:].T, numpy.eye(n - k)))
     return H
  # type: ignore
