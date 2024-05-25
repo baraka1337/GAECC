@@ -133,10 +133,8 @@ def EbN0_to_snr(EbN0, rate):
 def snr_to_EbN0(snr, rate):
     return snr - 10. * np.log10(2 * rate)
 
-
-
 def generate_parity_check_matrix(G):
     k, n = G.shape
-    H = numpy.hstack((G[:, k:].T ^ 1, numpy.eye(n - k)))
+    H = numpy.hstack((G[:, k:].T.astype(int) ^ 1, numpy.eye(n - k)))
     return H
  # type: ignore
