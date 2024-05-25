@@ -130,6 +130,10 @@ def EbN0_to_std(EbN0, rate):
 def EbN0_to_snr(EbN0, rate):
     return EbN0 + 10. * np.log10(2 * rate)
 
+def snr_to_EbN0(snr, rate):
+    return snr - 10. * np.log10(2 * rate)
+
+
 
 def generate_parity_check_matrix(G):
     k, n = G.shape

@@ -1,5 +1,8 @@
 from main import *
+from code import snr_to_EbN0
 import os.path
+import glob
+import csv
 
 
 def test_0():
@@ -303,6 +306,42 @@ def test_template(param):
 
     plot_best(ga, name)
     plot_all_generations(ga, name)
+
+def summarize_reuslts_in_excel(dir_path="./", output_file_path = "./best_results_summary.csv"):
+    param = {
+        "k": 24,
+        "n": 49,
+        "num_initial_population": 1000,
+        "sample_size": 1000,
+        "p_mutation": 0.01,
+        "num_generations": 100,
+        "ebn0": 4,
+        "num_parents_mating": 100,
+        "offspring_size": 800,
+        "delta": 1e-20,
+        "gamma": 7,
+    }
+    pattern = os.path.join(dir_path, '*.pickle')
+    data = []
+    for filepath in glob.iglob(pattern):
+        ga = GA.load_from_file(filepath)
+        ga_data = {key: value for key, value in ga.__dict__.items() if key in param.keys()}
+        best_of_the_bests = np.argmax(ga.bests_nlog)
+        ga_data["ebn0"] = snr_to_EbN0(ga.snr, ga.k/ga.n)
+        ga_data["best_of_the_bests_generation"] = best_of_the_bests
+        ga_data["best_of_the_bests -Log(BER)"] = ga.bests_nlog[best_of_the_bests]
+        data.append(ga_data)
+
+    # Get the header from the keys of the first dictionary
+    header = data[0].keys()
+
+    # Write the data to a CSV file
+    with open(output_file_path, mode='w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(data)
+
+    print(f"Data has been written to {output_file_path}")
 
 
 def plot_best(ga, name):
