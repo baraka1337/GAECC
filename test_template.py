@@ -1,5 +1,5 @@
 from main import *
-from code import snr_to_EbN0
+from code import snr_to_EbN0 # type: ignore
 import os.path
 import glob
 import csv
