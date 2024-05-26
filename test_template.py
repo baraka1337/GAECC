@@ -53,6 +53,40 @@ def test_2():
     }
     test_template(param)
 
+def test_2_5():
+    # less mutation
+    param = {
+        "k": 24,
+        "n": 49,
+        "num_initial_population": 1000,
+        "sample_size": 1000,
+        "p_mutation": 0.005,
+        "num_generations": 100,
+        "ebn0": 4,
+        "num_parents_mating": 200,
+        "offspring_size": 800,
+        "delta": 1e-20,
+        "gamma": 3,
+    }
+    test_template(param)
+
+def test_2_5_5():
+    # less mutation
+    param = {
+        "k": 24,
+        "n": 49,
+        "num_initial_population": 1000,
+        "sample_size": 1000,
+        "p_mutation": 0.001,
+        "num_generations": 100,
+        "ebn0": 4,
+        "num_parents_mating": 200,
+        "offspring_size": 800,
+        "delta": 1e-20,
+        "gamma": 3,
+    }
+    test_template(param)
+
 
 def test_3():
     # more parents_mating
