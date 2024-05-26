@@ -273,22 +273,24 @@ def test_all():
         "num_initial_population": 1000,
         "sample_size": 1000,
         "p_mutation": 0.01,
-        "num_generations": 50,
+        "num_generations": 80,
         "ebn0": 4,
         "num_parents_mating": 100,
         "offspring_size": 800,
         "delta": 1e-20,
         "gamma": 7,
     }
-    n_k = [(32, 11), (64, 32), (31, 16), (63, 35), (49, 24), (60, 52)]
+    n_k = [(32, 11), (64, 32), (31, 16), (63, 45), (49, 24), (60, 52)]
     ebn0 = [4, 5, 6]
     for e in ebn0:
         for n, k in n_k:
             param["k"] = k
             param["n"] = n
             param["ebn0"] = e
+            param["p_mutation"] = 1/(k * (n-k))
             print(f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}")
-            test_template(param)
+            test_template(param, folder="results")
+        param["sample_size"] = 10000
 
 def test_template(param, folder="."):
     name = "_".join(f"{a}_{b}" for a, b in param.items())
