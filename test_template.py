@@ -290,9 +290,9 @@ def test_all():
             print(f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}")
             test_template(param)
 
-def test_template(param):
+def test_template(param, folder="."):
     name = "_".join(f"{a}_{b}" for a, b in param.items())
-    filename = name + ".pickle"
+    filename = os.path.join(folder, name + ".pickle")
     if not os.path.exists(filename):
         ga = GA(**param)
         ga.run()
@@ -301,8 +301,9 @@ def test_template(param):
         ga = GA.load_from_file(filename)
         ga.end()
 
-    plot_best(ga, name)
-    plot_all_generations(ga, name)
+    filename_figure = os.path.join(folder, name)
+    plot_best(ga, filename_figure)
+    # plot_all_generations(ga, filename_figure)
 
 
 def plot_best(ga, name):
