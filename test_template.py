@@ -1,4 +1,4 @@
-from ga import *
+from main import *
 from code import snr_to_EbN0  # type: ignore
 import os.path
 import glob
@@ -20,6 +20,28 @@ def test_0():
         "offspring_size": 80,
         "delta": 1e-20,
         "gamma": 3,
+    }
+    test_template(param)
+
+
+def test_pickle():
+    # k_16_n_31_num_initial_population_1000_sample_size_10000_
+    # p_mutation_0.004166666666666667_num_generations_80_ebn0_4_
+    # num_parents_mating_100_offspring_size_700_delta_1e-20_
+    # gamma_7_bp_iter_5.pickle
+    param = {
+        "k": 16,
+        "n": 31,
+        "num_initial_population": 1000,
+        "sample_size": 10000,
+        "p_mutation": 1 / (16 * (31 - 16)),
+        "num_generations": 80,
+        "ebn0": 4,
+        "num_parents_mating": 100,
+        "offspring_size": 700,
+        "delta": 1e-20,
+        "gamma": 7,
+        "bp_iter": 5,
     }
     test_template(param)
 
@@ -387,7 +409,6 @@ def test_template(param, folder="."):
         ga.dump_to_file(filename)
     else:
         ga = GA.load_from_file(filename)
-        ga.end()
 
     filename_figure = os.path.join(folder, name)
     plot_best(ga, filename_figure)
@@ -486,4 +507,4 @@ def summarize_reuslts_in_excel(
 
 
 if __name__ == "__main__":
-    test_0()
+    test_pickle()
