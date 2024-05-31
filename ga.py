@@ -1,4 +1,4 @@
-from code import AWGN_channel, G_from_solution, generate_parity_check_matrix, EbN0_to_std, EbN0_to_snr, test_G  # type: ignore
+from code import AWGN_channel, G_from_solution, generate_parity_check_matrix, EbN0_to_std, EbN0_to_snr, test_G, DEFAULT_BP_MAX_ITER  # type: ignore
 from matplotlib import pyplot as plt
 import sys
 
@@ -8,8 +8,6 @@ sys.path.insert(0, "./")
 import numpy as np
 import pickle
 import time
-
-DEFAULT_BP_MAX_ITER = 5
 
 
 def fitness_single(

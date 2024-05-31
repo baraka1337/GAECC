@@ -1,8 +1,8 @@
-from code import BER, bin_to_sign, generate_parity_check_matrix
 import numpy as np
 
 import pyldpc
-from main import DEFAULT_BP_MAX_ITER
+
+DEFAULT_BP_MAX_ITER = 5
 
 
 def bin_to_sign(x):
