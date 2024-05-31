@@ -1,4 +1,8 @@
+from code import BER, bin_to_sign, generate_parity_check_matrix
 import numpy as np
+
+import pyldpc
+from main import DEFAULT_BP_MAX_ITER
 
 
 def bin_to_sign(x):
@@ -103,6 +107,62 @@ def generate_parity_check_matrix(G):
     k, n = G.shape
     H = np.hstack((G[:, k:].T.astype(int) ^ 1, np.eye(n - k)))
     return H
+
+
+def G_from_solution(solution, k):
+    """
+    Constructs the G matrix from a given solution and dimension k.
+
+    Parameters:
+    solution (ndarray): The solution array.
+    k (int): The dimension of the identity matrix.
+
+    Returns:
+    ndarray: The G matrix constructed by horizontally stacking the identity matrix with the solution array.
+    """
+    return np.hstack((np.eye(k), solution))
+
+
+def AWGN_channel(x, sigma):
+    """
+    Applies Additive White Gaussian Noise (AWGN) to the input signal.
+
+    Parameters:
+    - x: numpy array, input signal
+    - sigma: float, standard deviation of the Gaussian noise
+
+    Returns:
+    - y: numpy array, signal with AWGN applied
+    """
+    mean = 0
+    z = np.random.normal(mean, sigma, x.shape)
+    y = bin_to_sign(x) + z
+    return y
+
+
+def test_G(G, sample_size, sigma, snr, H=None, bp_iter=DEFAULT_BP_MAX_ITER):
+    """
+    Test the performance of a given generator matrix G.
+
+    Args:
+        G (ndarray): The generator matrix.
+        sample_size (int): The number of samples to test.
+        sigma (float): The standard deviation of the AWGN channel.
+        snr (float): The signal-to-noise ratio.
+        H (ndarray, optional): The parity check matrix. If not provided, it will be generated.
+        bp_iter (int, optional): The maximum number of iterations for belief propagation decoding.
+
+    Returns:
+        float: The bit error rate (BER) of the decoded samples.
+    """
+    if H is None:
+        H = generate_parity_check_matrix(G)
+    x_vec = np.zeros((sample_size, G.shape[1]))
+    y_vec = AWGN_channel(x_vec, sigma)
+
+    x_pred_vec = pyldpc.decode(H, y_vec.T, snr, bp_iter)
+    x_pred_vec = x_pred_vec.T
+    return BER(x_vec, x_pred_vec)
 
 
 # type: ignore

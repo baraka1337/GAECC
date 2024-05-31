@@ -1,39 +1,15 @@
-from code import bin_to_sign, BER, generate_parity_check_matrix, EbN0_to_std, EbN0_to_snr  # type: ignore
+from code import AWGN_channel, G_from_solution, generate_parity_check_matrix, EbN0_to_std, EbN0_to_snr, test_G  # type: ignore
 from matplotlib import pyplot as plt
 import sys
 
+from utils import apply_function_with_processes
+
 sys.path.insert(0, "./")
-import pyldpc
 import numpy as np
-from tqdm import tqdm
 import pickle
 import time
-from concurrent.futures import ProcessPoolExecutor
 
 DEFAULT_BP_MAX_ITER = 5
-
-
-def apply_function_with_processes(func, iterator, result, *args, **kwargs):
-    """
-    Apply a function with processes to each item in an iterator using ProcessPoolExecutor.
-
-    Args:
-    - iterator: Iterator containing items to apply the function on.
-    - func: Function to be applied on each item.
-    - *args: Extra positional arguments to be passed to the function.
-    - **kwargs: Extra keyword arguments to be passed to the function.
-    """
-    with ProcessPoolExecutor() as executor:
-        # Map each item in the iterator to the function with given arguments
-        futures = {
-            executor.submit(func, item, result[i], *args, **kwargs): (i, item)
-            for i, item in enumerate(iterator)
-        }
-
-        # Wait for all threads to finish
-        for i, future in tqdm(enumerate(futures)):
-            value = future.result()
-            result[i] = value
 
 
 def fitness_single(
@@ -56,7 +32,6 @@ def fitness_single(
     Returns:
     - fitness: The fitness value for the given solution.
     """
-    # create a systematic matrix from the solution
     if last_fitness_result != 0:
         return last_fitness_result
     G = G_from_solution(solution, k)
@@ -252,59 +227,3 @@ class GA:
         """
         with open(filename, "wb") as file:
             pickle.dump(self, file)
-
-
-def AWGN_channel(x, sigma):
-    """
-    Applies Additive White Gaussian Noise (AWGN) to the input signal.
-
-    Parameters:
-    - x: numpy array, input signal
-    - sigma: float, standard deviation of the Gaussian noise
-
-    Returns:
-    - y: numpy array, signal with AWGN applied
-    """
-    mean = 0
-    z = np.random.normal(mean, sigma, x.shape)
-    y = bin_to_sign(x) + z
-    return y
-
-
-def test_G(G, sample_size, sigma, snr, H=None, bp_iter=DEFAULT_BP_MAX_ITER):
-    """
-    Test the performance of a given generator matrix G.
-
-    Args:
-        G (ndarray): The generator matrix.
-        sample_size (int): The number of samples to test.
-        sigma (float): The standard deviation of the AWGN channel.
-        snr (float): The signal-to-noise ratio.
-        H (ndarray, optional): The parity check matrix. If not provided, it will be generated.
-        bp_iter (int, optional): The maximum number of iterations for belief propagation decoding.
-
-    Returns:
-        float: The bit error rate (BER) of the decoded samples.
-    """
-    if H is None:
-        H = generate_parity_check_matrix(G)
-    x_vec = np.zeros((sample_size, G.shape[1]))
-    y_vec = AWGN_channel(x_vec, sigma)
-
-    x_pred_vec = pyldpc.decode(H, y_vec.T, snr, bp_iter)
-    x_pred_vec = x_pred_vec.T
-    return BER(x_vec, x_pred_vec)
-
-
-def G_from_solution(solution, k):
-    """
-    Constructs the G matrix from a given solution and dimension k.
-
-    Parameters:
-    solution (ndarray): The solution array.
-    k (int): The dimension of the identity matrix.
-
-    Returns:
-    ndarray: The G matrix constructed by horizontally stacking the identity matrix with the solution array.
-    """
-    return np.hstack((np.eye(k), solution))
