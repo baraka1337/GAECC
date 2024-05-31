@@ -3,13 +3,6 @@ from code import snr_to_EbN0 # type: ignore
 import os.path
 import glob
 import csv
-try:
-    import pandas as pd
-except:
-    os.system("pip install pandas")
-    import time; time.sleep(10)
-    import pandas as pd
-
 
 def test_0():
     param = {
@@ -324,21 +317,24 @@ def test_all():
         "gamma": 7,
         "bp_iter": 5,
     }
-
-    # for e in [5]:
-    #     for n, k in [(49, 24), (60, 52), (64, 32)]:
-    #         param["k"] = k
-    #         param["n"] = n
-    #         param["ebn0"] = e
-    #         param["p_mutation"] = 1/(k * (n-k))
-    #         param["offspring_size"] = 700
-    #         if e == 6 or (e == 5 and n == 64):
-    #             param["sample_size"] = 1e5
-    #         print(f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}, bp_iter={param['bp_iter']}")
-    #         test_template(param, folder="results")
+    
+    for o_size in [800]:        
+        for bp_iter in [5]:
+            for e in [5]:
+                for n, k in [(63, 45), (49, 24), (60, 52), (64, 32)]:
+                        param["k"] = k
+                        param["n"] = n
+                        param["ebn0"] = e
+                        param["p_mutation"] = 1/(k * (n-k))
+                        param["offspring_size"] = o_size
+                        param["bp_iter"] = bp_iter
+                        # if e == 6 or (e == 5 and n == 64):
+                        #     param["sample_size"] = param["sample_size"]
+                        print(f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}, bp_iter={param['bp_iter']}")
+                        test_template(param, folder="results")
 
     n_k = [(32, 11), (31, 16), (63, 45), (49, 24), (60, 52), (64, 32)]
-    ebn0 = [4, 5, 6]
+    ebn0 = [5, 4]
     for o_size in [800, 700]:        
         for bp_iter in [50, 5]:
             for e in ebn0:
@@ -353,6 +349,22 @@ def test_all():
                         #     param["sample_size"] = param["sample_size"]
                         print(f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}, bp_iter={param['bp_iter']}")
                         test_template(param, folder="results")
+    
+    for o_size in [700]:        
+        for bp_iter in [5]:
+            for e in [5]:
+                for n, k in [(63, 45), (49, 24), (60, 52), (64, 32)]:
+                        param["k"] = k
+                        param["n"] = n
+                        param["ebn0"] = e
+                        param["p_mutation"] = 1/(k * (n-k))
+                        param["offspring_size"] = o_size
+                        param["bp_iter"] = bp_iter
+                        # if e == 6 or (e == 5 and n == 64):
+                        #     param["sample_size"] = param["sample_size"]
+                        print(f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}, bp_iter={param['bp_iter']}")
+                        test_template(param, folder="results")
+
 
 def test_template(param, folder="."):
     name = "_".join(f"{a}_{b}" for a, b in param.items())
@@ -410,7 +422,12 @@ def summarize_reuslts_in_excel(dir_path="./", output_file_path = "./best_results
         writer = csv.DictWriter(file, fieldnames=header)
         writer.writeheader()
         writer.writerows(data)
-    
+    try:
+        import pandas as pd
+    except:
+        os.system("pip install pandas")
+        import time; time.sleep(10)
+        import pandas as pd
     df = pd.read_csv(output_file_path)
     df["Best?"] = "X"
     print(df.bp_iter.drop_duplicates())
