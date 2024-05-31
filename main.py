@@ -1,5 +1,7 @@
 from code import bin_to_sign, BER, generate_parity_check_matrix, EbN0_to_std, EbN0_to_snr  # type: ignore
 from matplotlib import pyplot as plt
+import sys
+sys.path.insert(0, "./")
 import pyldpc
 import numpy as np
 from tqdm import tqdm
@@ -7,7 +9,7 @@ import pickle
 import time
 from concurrent.futures import ProcessPoolExecutor
 
-BP_MAX_ITER = 5
+DEFAULT_BP_MAX_ITER = 5
 
 
 def apply_function_with_threads(func, iterator, result, *args, **kwargs):
@@ -31,13 +33,13 @@ def apply_function_with_threads(func, iterator, result, *args, **kwargs):
             result[i] = value
 
 
-def fitness_single(solution, last_fitness_result, k, sample_size, sigma, snr, delta, gamma):
+def fitness_single(solution, last_fitness_result, k, sample_size, sigma, snr, delta, gamma, bp_iter):
     # create a systematic matrix from the solution
     if last_fitness_result != 0:
         return last_fitness_result
     G = G_from_solution(solution, k)
     H = generate_parity_check_matrix(G)
-    ber = test_G(G, sample_size, sigma, snr, H)
+    ber = test_G(G, sample_size, sigma, snr, H, bp_iter=bp_iter)
     fitness = (1 / (ber + delta)) ** gamma
     return fitness
 
@@ -56,6 +58,7 @@ class GA:
             ebn0=5,
             delta=1e-20,
             gamma=3,
+            bp_iter = DEFAULT_BP_MAX_ITER
     ):
         self.k = k
         self.n = n
@@ -66,9 +69,11 @@ class GA:
         self.population = np.random.choice(a=[0, 1], size=initial_population_size)
         self.channel_func = AWGN_channel
         self.fitness_result = np.zeros(num_initial_population)
+        self.best_of_the_bests_sol = np.zeros((self.k, (self.n - self.k)))
         self.offspring_size = offspring_size
         self.p_mutation = p_mutation
         self.num_generations = num_generations
+        self.bp_iter = bp_iter
 
         self.fitness_result_normalize = None
         self.start_generation_time = 0
@@ -85,7 +90,7 @@ class GA:
         self.all_nlog = []
 
     def fitness(self):
-        apply_function_with_threads(fitness_single, self.population, self.fitness_result, self.k, self.sample_size, self.sigma, self.snr, self.delta, self.gamma)
+        apply_function_with_threads(fitness_single, self.population, self.fitness_result, self.k, self.sample_size, self.sigma, self.snr, self.delta, self.gamma, self.bp_iter)
         # for i, solution in tqdm(enumerate(self.population), total=self.num_initial_population):
         #     self.fitness_single(i, solution)
 
@@ -130,8 +135,10 @@ class GA:
     def end_generation(self, generations_index):
         change_in_fitness = self.best_solution_fitness - self.last_fitness
         G = G_from_solution(self.best_solution, self.k)
-        ber = test_G(G, self.sample_size * 10, self.sigma, self.snr)
+        ber = test_G(G, self.sample_size * 10, self.sigma, self.snr, bp_iter=self.bp_iter)
         nlog = -np.log(ber)
+        if self.bests_nlog == [] or nlog < np.min(self.bests_nlog):
+            self.best_of_the_bests_sol = self.best_solution
         self.bests_nlog.append(nlog)
         print(f"Generation = {generations_index}")
         print(f"Fitness    = {self.best_solution_fitness}")
@@ -177,7 +184,7 @@ def AWGN_channel(x, sigma):
 # and the following propety is satisfied: H @ G.T % 2 = 0
 
 
-def test_G(G, sample_size, sigma, snr, H=None, train=True):
+def test_G(G, sample_size, sigma, snr, H=None, bp_iter=DEFAULT_BP_MAX_ITER):
     if H is None:
         H = generate_parity_check_matrix(G)
     x_vec = np.zeros((sample_size, G.shape[1]))
@@ -189,7 +196,7 @@ def test_G(G, sample_size, sigma, snr, H=None, train=True):
     #     x_vec = x_vec.T
     y_vec = AWGN_channel(x_vec, sigma)
 
-    x_pred_vec = pyldpc.decode(H, y_vec.T, snr, BP_MAX_ITER if train else 1000)
+    x_pred_vec = pyldpc.decode(H, y_vec.T, snr, bp_iter)
     x_pred_vec = x_pred_vec.T
     return BER(x_vec, x_pred_vec)
 
