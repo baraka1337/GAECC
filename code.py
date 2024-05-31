@@ -1,7 +1,6 @@
 import numpy as np
 
 
-
 def bin_to_sign(x):
     """
     Converts a binary value to its signed representation.
@@ -26,9 +25,9 @@ def EbN0_to_std(EbN0, rate):
     Returns:
     - std (float): The standard deviation of the noise.
     """
-    
-    snr = EbN0 + 10. * np.log10(2 * rate)
-    return np.sqrt(1. / (10. ** (snr / 10.)))
+
+    snr = EbN0 + 10.0 * np.log10(2 * rate)
+    return np.sqrt(1.0 / (10.0 ** (snr / 10.0)))
 
 
 def BER(x_pred, x_gt):
@@ -58,8 +57,8 @@ def EbN0_to_std(EbN0, rate):
     - std (float): The standard deviation of the noise.
 
     """
-    snr = EbN0 + 10. * np.log10(2 * rate)
-    return np.sqrt(1. / (10. ** (snr / 10.)))
+    snr = EbN0 + 10.0 * np.log10(2 * rate)
+    return np.sqrt(1.0 / (10.0 ** (snr / 10.0)))
 
 
 def EbN0_to_snr(EbN0, rate):
@@ -73,7 +72,8 @@ def EbN0_to_snr(EbN0, rate):
     Returns:
     - snr (float): The SNR ratio in dB.
     """
-    return EbN0 + 10. * np.log10(2 * rate)
+    return EbN0 + 10.0 * np.log10(2 * rate)
+
 
 def snr_to_EbN0(snr, rate):
     """
@@ -86,7 +86,8 @@ def snr_to_EbN0(snr, rate):
     Returns:
     - float: Energy per Bit to Noise Power Spectral Density (Eb/N0) in decibels (dB).
     """
-    return snr - 10. * np.log10(2 * rate)
+    return snr - 10.0 * np.log10(2 * rate)
+
 
 def generate_parity_check_matrix(G):
     """
@@ -102,4 +103,6 @@ def generate_parity_check_matrix(G):
     k, n = G.shape
     H = np.hstack((G[:, k:].T.astype(int) ^ 1, np.eye(n - k)))
     return H
- # type: ignore
+
+
+# type: ignore
