@@ -1,5 +1,5 @@
 from tqdm import tqdm
-
+from code import G_from_solution  # type: ignore
 
 from concurrent.futures import ProcessPoolExecutor
 import numpy as np
@@ -58,3 +58,14 @@ def plot_best(ga, name):
     plt.legend()
     # plt.show()
     plt.savefig(f"{name}_best.png")
+
+
+def best_matrix_to_image(ga, name):
+    matrix = G_from_solution(ga.best_of_the_bests_sol, ga.k)
+    plt.figure()
+    plt.imshow((matrix.astype(int) ^ 1) * 255, cmap="gray")
+
+    plt.gca().xaxis.set_visible(False)  # Remove x-axis ticks and labels
+    plt.gca().yaxis.set_visible(False)  # Remove y-axis ticks and labels
+    plt.tight_layout(pad=1)  # Remove padding around the image
+    plt.savefig(f"{name}_matrix.png")

@@ -4,7 +4,7 @@ import os.path
 import glob
 import csv
 
-from utils import plot_best
+from utils import plot_best, best_matrix_to_image
 
 
 def test_0():
@@ -391,6 +391,7 @@ def test_template(param, folder="."):
 
     filename_figure = os.path.join(folder, name)
     plot_best(ga, filename_figure)
+    best_matrix_to_image(ga, filename_figure)
     # plot_all_generations(ga, filename_figure)
 
 
