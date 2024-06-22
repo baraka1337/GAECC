@@ -22,8 +22,4 @@ To get started with the GAECC project, follow these steps:
 
 Contributions to the GAECC project are welcome! If you have any ideas, bug fixes, or improvements, feel free to submit a pull request. Please make sure to follow the project's coding conventions and guidelines.
 
-## License
-
-This project is licensed under the MIT License. See the [LICENSE](./LICENSE) file for more information.
-
 Happy coding!
