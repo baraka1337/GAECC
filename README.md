@@ -25,7 +25,7 @@ To run the tests for the GAECC project, you have two options:
 
 1. If you have srun installed on your server and a Docker image from [this link](https://hub.docker.com/layers/itayerlich/gaecc/1.0/images/sha256-4765b60050c3f668a68444d10f8503cdc594459dd441cb75d79a89368487437c?context=repo), you can use the following command:
 ```
-./rerun_test.sh
+./rerun_test.sh <container_image>
 ```
 This script automates the process of running the test cases and provides a convenient way to validate the functionality of the code.
 
