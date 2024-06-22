@@ -1,133 +1,168 @@
-import os
-
-import numpy
 import numpy as np
 
+import pyldpc
 
-def row_reduce(mat, ncols=None):
-    assert mat.ndim == 2
-    ncols = mat.shape[1] if ncols is None else ncols
-    mat_row_reduced = mat.copy()
-    p = 0
-    for j in range(ncols):
-        idxs = p + np.nonzero(mat_row_reduced[p:, j])[0]
-        if idxs.size == 0:
-            continue
-        mat_row_reduced[[p, idxs[0]], :] = mat_row_reduced[[idxs[0], p], :]
-        idxs = np.nonzero(mat_row_reduced[:, j])[0].tolist()
-        idxs.remove(p)
-        mat_row_reduced[idxs, :] = mat_row_reduced[idxs,
-                                                   :] ^ mat_row_reduced[p, :]
-        p += 1
-        if p == mat_row_reduced.shape[0]:
-            break
-    return mat_row_reduced, p
-
-
-def get_generator(pc_matrix_):
-    assert pc_matrix_.ndim == 2
-    pc_matrix = pc_matrix_.copy().astype(bool).transpose()
-    pc_matrix_I = np.concatenate(
-        (pc_matrix, np.eye(pc_matrix.shape[0], dtype=bool)), axis=-1)
-    pc_matrix_I, p = row_reduce(pc_matrix_I, ncols=pc_matrix.shape[1])
-    return row_reduce(pc_matrix_I[p:, pc_matrix.shape[1]:])[0]
-
-
-def get_standard_form(pc_matrix_):
-    pc_matrix = pc_matrix_.copy().astype(bool)
-    next_col = min(pc_matrix.shape)
-    for ii in range(min(pc_matrix.shape)):
-        while True:
-            rows_ones = ii + np.where(pc_matrix[ii:, ii])[0]
-            if len(rows_ones) == 0:
-                new_shift = np.arange(
-                    ii, min(pc_matrix.shape) - 1).tolist()+[min(pc_matrix.shape) - 1, next_col]
-                old_shift = np.arange(
-                    ii + 1, min(pc_matrix.shape)).tolist()+[next_col, ii]
-                pc_matrix[:, new_shift] = pc_matrix[:, old_shift]
-                next_col += 1
-            else:
-                break
-        pc_matrix[[ii, rows_ones[0]], :] = pc_matrix[[rows_ones[0], ii], :]
-        other_rows = pc_matrix[:, ii].copy()
-        other_rows[ii] = False
-        pc_matrix[other_rows] = pc_matrix[other_rows] ^ pc_matrix[ii]
-    return pc_matrix.astype(int)
-
-
-def Read_pc_matrixrix_alist(fileName):
-    with open(fileName, 'r') as file:
-        lines = file.readlines()
-        columnNum, rowNum = np.fromstring(
-            lines[0].rstrip('\n'), dtype=int, sep=' ')
-        H = np.zeros((rowNum, columnNum)).astype(int)
-        for column in range(4, 4 + columnNum):
-            nonZeroEntries = np.fromstring(
-                lines[column].rstrip('\n'), dtype=int, sep=' ')
-            for row in nonZeroEntries:
-                if row > 0:
-                    H[row - 1, column - 4] = 1
-        return H
-
-
-def Get_Generator_and_Parity(code, standard_form=False):
-    n, k = code.n, code.k
-    path_pc_mat = os.path.join(
-        'Codes_DB', f'{code.code_type}_N{str(n)}_K{str(k)}')
-    if code.code_type in ['POLAR', 'BCH']:
-        ParityMatrix = np.loadtxt(path_pc_mat+'.txt')
-    elif code.code_type in ['CCSDS', 'LDPC', 'MACKAY']:
-        ParityMatrix = Read_pc_matrixrix_alist(path_pc_mat+'.alist')
-    else:
-        raise Exception(f'Wrong code {code.code_type}')
-    if standard_form and code.code_type not in ['CCSDS', 'LDPC', 'MACKAY']:
-        ParityMatrix = get_standard_form(ParityMatrix).astype(int)
-        GeneratorMatrix = np.concatenate(
-            [np.mod(-ParityMatrix[:, min(ParityMatrix.shape):].transpose(), 2), np.eye(k)], 1).astype(int)
-    else:
-        GeneratorMatrix = get_generator(ParityMatrix)
-    assert np.all(np.mod((np.matmul(GeneratorMatrix, ParityMatrix.transpose())), 2)
-                  == 0) and np.sum(GeneratorMatrix) > 0
-    return GeneratorMatrix.astype(float), ParityMatrix.astype(float)
-
-
-class Code():
-    def __init__(self, code_type, n, k):
-        self.code_type = code_type
-        self.n = n
-        self.k = k
-
-
-def set_seed(seed=42):
-    numpy.random.seed(seed)
-
-
-def sign_to_bin(x):
-    return 0.5 * (1 - x)
+DEFAULT_BP_MAX_ITER = 5
 
 
 def bin_to_sign(x):
+    """
+    Converts a binary value to its signed representation.
+
+    Parameters:
+    x (int): The binary value to be converted.
+
+    Returns:
+    int: The signed representation of the binary value.
+    """
     return 1 - 2 * x
 
 
 def EbN0_to_std(EbN0, rate):
-    snr = EbN0 + 10. * numpy.log10(2 * rate)
-    return numpy.sqrt(1. / (10. ** (snr / 10.)))
+    """
+    Convert Eb/N0 to standard deviation of the noise.
+
+    Parameters:
+    - EbN0 (float): The ratio of energy per bit to noise power spectral density.
+    - rate (float): The data rate in bits per second.
+
+    Returns:
+    - std (float): The standard deviation of the noise.
+    """
+
+    snr = EbN0 + 10.0 * np.log10(2 * rate)
+    return np.sqrt(1.0 / (10.0 ** (snr / 10.0)))
 
 
 def BER(x_pred, x_gt):
-    return numpy.mean((x_pred != x_gt)).item()
+    """
+    Calculates the Bit Error Rate (BER) between two binary sequences.
 
+    Parameters:
+    x_pred (array-like): The predicted binary sequence.
+    x_gt (array-like): The ground truth binary sequence.
 
-def FER(x_pred, x_gt):
-    return numpy.mean(numpy.any(x_pred != x_gt, dim=1).float()).item()
+    Returns:
+    float: The calculated Bit Error Rate (BER).
+
+    """
+    return np.mean((x_pred != x_gt)).item()
 
 
 def EbN0_to_std(EbN0, rate):
-    snr = EbN0 + 10. * np.log10(2 * rate)
-    return np.sqrt(1. / (10. ** (snr / 10.)))
+    """
+    Convert Eb/N0 to standard deviation of the noise.
+
+    Parameters:
+    - EbN0 (float): The ratio of energy per bit to noise power spectral density.
+    - rate (float): The data rate in bits per second.
+
+    Returns:
+    - std (float): The standard deviation of the noise.
+
+    """
+    snr = EbN0 + 10.0 * np.log10(2 * rate)
+    return np.sqrt(1.0 / (10.0 ** (snr / 10.0)))
+
+
+def EbN0_to_snr(EbN0, rate):
+    """
+    Converts Eb/N0 (Energy per Bit to Noise Power Spectral Density ratio) to SNR (Signal-to-Noise Ratio).
+
+    Parameters:
+    - EbN0 (float): The Eb/N0 ratio in dB.
+    - rate (float): The data rate in bits per second.
+
+    Returns:
+    - snr (float): The SNR ratio in dB.
+    """
+    return EbN0 + 10.0 * np.log10(2 * rate)
+
+
+def snr_to_EbN0(snr, rate):
+    """
+    Convert Signal-to-Noise Ratio (SNR) to Energy per Bit to Noise Power Spectral Density (Eb/N0).
+
+    Parameters:
+    - snr (float): Signal-to-Noise Ratio in decibels (dB).
+    - rate (float): Data rate in bits per second (bps).
+
+    Returns:
+    - float: Energy per Bit to Noise Power Spectral Density (Eb/N0) in decibels (dB).
+    """
+    return snr - 10.0 * np.log10(2 * rate)
+
 
 def generate_parity_check_matrix(G):
+    """
+    Generates the parity check matrix (H) from the generator matrix (G).
+
+    Parameters:
+    G (numpy.ndarray): The generator matrix.
+
+    Returns:
+    numpy.ndarray: The parity check matrix.
+
+    """
     k, n = G.shape
-    H = numpy.hstack((G[:, k:].T, numpy.eye(n - k)))
+    H = np.hstack((G[:, k:].T, np.eye(n - k)))
     return H
+
+
+def G_from_solution(solution, k):
+    """
+    Constructs the G matrix from a given solution and dimension k.
+
+    Parameters:
+    solution (ndarray): The solution array.
+    k (int): The dimension of the identity matrix.
+
+    Returns:
+    ndarray: The G matrix constructed by horizontally stacking the identity matrix with the solution array.
+    """
+    return np.hstack((np.eye(k), solution))
+
+
+def AWGN_channel(x, sigma):
+    """
+    Applies Additive White Gaussian Noise (AWGN) to the input signal.
+
+    Parameters:
+    - x: numpy array, input signal
+    - sigma: float, standard deviation of the Gaussian noise
+
+    Returns:
+    - y: numpy array, signal with AWGN applied
+    """
+    mean = 0
+    z = np.random.normal(mean, sigma, x.shape)
+    y = bin_to_sign(x) + z
+    return y
+
+
+def test_G(G, sample_size, sigma, snr, H=None, bp_iter=DEFAULT_BP_MAX_ITER):
+    """
+    Test the performance of a given generator matrix G.
+
+    Args:
+        G (ndarray): The generator matrix.
+        sample_size (int): The number of samples to test.
+        sigma (float): The standard deviation of the AWGN channel.
+        snr (float): The signal-to-noise ratio.
+        H (ndarray, optional): The parity check matrix. If not provided, it will be generated.
+        bp_iter (int, optional): The maximum number of iterations for belief propagation decoding.
+
+    Returns:
+        float: The bit error rate (BER) of the decoded samples.
+    """
+    if H is None:
+        H = generate_parity_check_matrix(G)
+    x_vec = np.zeros((sample_size, G.shape[1]))
+    y_vec = AWGN_channel(x_vec, sigma)
+
+    x_pred_vec = pyldpc.decode(H, y_vec.T, snr, bp_iter)
+    x_pred_vec = x_pred_vec.T
+    return BER(x_vec, x_pred_vec)
+
+
+# type: ignore

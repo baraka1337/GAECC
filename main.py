@@ -1,190 +1,227 @@
-import pygad
-import pyldpc
-import time
-from code import bin_to_sign, BER, generate_parity_check_matrix, Get_Generator_and_Parity, Code, EbN0_to_std
+from code import AWGN_channel, G_from_solution, generate_parity_check_matrix, EbN0_to_std, EbN0_to_snr, test_G, DEFAULT_BP_MAX_ITER  # type: ignore
+from matplotlib import pyplot as plt
+import sys
+
+from utils import apply_function_with_processes
+
+sys.path.insert(0, "./")
 import numpy as np
-#############################################
-### constants ###
-N = 49
-K = 24
-BP_MAX_ITER = 10
-BP_SNR = 3  # [db]
-#SIGMA = (10 ** (-BP_SNR / 10))**0.5
-SIGMA = EbN0_to_std(5, K/N)
-# same std as in yoni's code
-# SIGMA = EbN0_to_std(7, K/N)
-# BP_SNR = -10 *BP_SNR math.log(SIGMA**2, 10)
-
-# function_inputs = np.random.uniform(-5, 5, size=sample_size)
-#############################################
+import pickle
+import time
 
 
-def AWGN_channel(x, sigma=SIGMA):
-    mean = 0
-    z = np.random.normal(mean, sigma, x.shape)
-    y = bin_to_sign(x) + z
-    return y
+def fitness_single(
+    solution, last_fitness_result, k, sample_size, sigma, snr, delta, gamma, bp_iter
+):
+    """
+    Calculates the fitness value for a single solution in a genetic algorithm.
 
+    Parameters:
+    - solution: The solution for which to calculate the fitness value.
+    - last_fitness_result: The fitness value calculated in the previous iteration. If non-zero, it is returned as is.
+    - k: The number of bits in the solution.
+    - sample_size: The number of samples to use for testing.
+    - sigma: The standard deviation of the noise.
+    - snr: The signal-to-noise ratio.
+    - delta: A small constant to avoid division by zero.
+    - gamma: The exponent used in the fitness calculation.
+    - bp_iter: The number of iterations to run belief propagation.
 
-# H PCM is created such that H.shape = (n-k, n)
-# and the following propety is satisfied: H @ G.T % 2 = 0
-
-
-def test_G(G, H=None, train=True):
-    if H is None:
-        H = generate_parity_check_matrix(G)
-    if train:
-        x_vec = np.zeros((function_inputs.shape[1], G.shape[1]))
-    else:
-        x_vec = G.T @ function_inputs % 2
-        x_vec = x_vec.T
-    y_vec = AWGN_channel(x_vec)
-
-    x_pred_vec = pyldpc.decode(H, y_vec.T, BP_SNR, BP_MAX_ITER if train else 1000)
-    x_pred_vec = x_pred_vec.T
-    return BER(x_vec, x_pred_vec)
-
-
-def fitness_func(ga_instance, solution, solution_idx):
-    # create a systematic matrix from the solution
-    G = G_from_solution(solution)
+    Returns:
+    - fitness: The fitness value for the given solution.
+    """
+    if last_fitness_result != 0:
+        return last_fitness_result
+    G = G_from_solution(solution, k)
     H = generate_parity_check_matrix(G)
-    # check if H/G is low parity density matrix - expected 20% sparsity or less
-    # sparsity_perc = np.sum(H) / np.size(H)
-    # if sparsity_perc >= 0.2:
-    #     # by definition of sparsity_perc, it is positive. so fitness 0 will by definition be minimal.
-    #     return 0
-    ber = test_G(G, H)
-    fitness = -np.log(ber + 1e-20)
-    # ber = test_G(G, H, train=False)
-    # fitness2 = -np.log(ber + 1e-20)
-    # fitness = (1/(ber + 1e-2))
-    # + 1/(np.sum(solution)**2 + 10))
+    ber = test_G(G, sample_size, sigma, snr, H, bp_iter=bp_iter)
+    fitness = (1 / (ber + delta)) ** gamma
     return fitness
 
 
-def mutation_func(offspring, ga_instance):
-    # This is random mutation that mutates a single gene.
-    for chromosome_idx in range(offspring.shape[0]):
-        # Make some random changes in 1 or more genes.
-        # trying to flip 10 bits and see how it affects
-        for i in range(10):
-            random_gene_idx = np.random.choice(range(offspring.shape[1]))
-            offspring[chromosome_idx, random_gene_idx] ^= 1
+class GA:
+    def __init__(
+        self,
+        k,
+        n,
+        num_initial_population,
+        sample_size,
+        num_parents_mating,
+        offspring_size,
+        p_mutation=0.05,
+        num_generations=5,
+        ebn0=5,
+        delta=1e-20,
+        gamma=3,
+        bp_iter=DEFAULT_BP_MAX_ITER,
+    ):
+        self.k = k
+        self.n = n
+        self.num_initial_population = num_initial_population
+        self.sample_size = sample_size
+        self.num_parents_mating = num_parents_mating
+        initial_population_size = (
+            self.num_initial_population,
+            self.k,
+            (self.n - self.k),
+        )
+        self.population = np.random.choice(a=[0, 1], size=initial_population_size)
+        self.channel_func = AWGN_channel
+        self.fitness_result = np.zeros(num_initial_population)
+        self.best_of_the_bests_sol = np.zeros((self.k, (self.n - self.k)))
+        self.offspring_size = offspring_size
+        self.p_mutation = p_mutation
+        self.num_generations = num_generations
+        self.bp_iter = bp_iter
 
-    return offspring
+        self.fitness_result_normalize = None
+        self.start_generation_time = 0
+        self.last_fitness = 0
+        self.best_solution = None
+        self.best_solution_fitness = 0
+        self.sigma = EbN0_to_std(ebn0, self.k / self.n)
+        self.snr = EbN0_to_snr(ebn0, self.k / self.n)
+        self.bests_nlog = []
 
+        self.delta = delta
+        self.gamma = gamma
+        self.max_fitness = (1 / self.delta) ** self.gamma
+        self.all_nlog = []
 
-def test_crossover_func():
-    num_parents_mating = 10
-    offspring_size = (10, 12)
-    ga_instance = type('MyClass', (), {"num_parents_mating": num_parents_mating})
-    parents = np.array([[i] * offspring_size[1] for i in range(ga_instance.num_parents_mating)])
-    offsprings = crossover_func(parents, offspring_size, ga_instance)
-    for offspring in offsprings:
-        print(offspring.reshape(3, 4).T)
-        print("")
+    def fitness(self):
+        """
+        Calculate the fitness of each individual in the population.
 
+        This method applies the `fitness_single` function to each individual in the population
+        using multiple processes for parallel execution. The fitness result is stored in the
+        `fitness_result` attribute.
 
-def crossover_func(parents, offspring_size, ga_instance):
-    offsprings = []
-    for _ in range(offspring_size[0]):
-        a, b = parents[np.random.choice(ga_instance.num_parents_mating, size=2, replace=False)]
-        split_points = np.random.randint(K, size=N - K)
-        offspring = np.concatenate(
-            [np.concatenate((a[i * K:i * K + s], b[i * K + s:(i + 1) * K])) for i, s in
-             enumerate(split_points)])
+        After calculating the fitness, the method normalizes the fitness results, finds the
+        index of the best solution, and updates the `best_solution` and `best_solution_fitness`
+        attributes accordingly.
+        """
+        apply_function_with_processes(
+            fitness_single,
+            self.population,
+            self.fitness_result,
+            self.k,
+            self.sample_size,
+            self.sigma,
+            self.snr,
+            self.delta,
+            self.gamma,
+            self.bp_iter,
+        )
 
-        offsprings.append(offspring)
+        self.fitness_result_normalize = self.fitness_result / np.sum(
+            self.fitness_result
+        )
+        best_solution_index = np.argmax(self.fitness_result)
+        self.best_solution = self.population[best_solution_index].copy()
+        self.best_solution_fitness = self.fitness_result[best_solution_index]
 
-    return np.array(offsprings)
+    def crossover(self):
+        """
+        Performs crossover operation on the population.
 
+        Returns:
+            offsprings (ndarray): The resulting offsprings after crossover.
+        """
+        indices_of_parents_mating = np.random.choice(
+            self.num_initial_population,
+            size=self.num_parents_mating,
+            p=self.fitness_result_normalize,
+            replace=False,
+        )
+        indices = np.random.choice(
+            self.num_parents_mating, size=(2, self.offspring_size)
+        )
+        a = self.population[indices_of_parents_mating][indices[0]]
+        b = self.population[indices_of_parents_mating][indices[1]]
 
-last_fitness = 0
-start_g = time.time()
+        random_points = np.random.randint(
+            self.k, size=(self.offspring_size, self.n - self.k)
+        )
+        mask = np.arange(self.k) < random_points[:, :, None]
+        mask = mask.transpose((0, 2, 1))
+        offsprings = np.where(mask, a, b)
 
+        return offsprings
 
-def on_generation(ga_instance):
-    global last_fitness
-    global start_g
-    change_in_fitness = ga_instance.best_solution(
-        pop_fitness=ga_instance.last_generation_fitness)[1] - last_fitness
-    solution, solution_fitness = ga_instance.best_solution(
-        pop_fitness=ga_instance.last_generation_fitness)[:2]
-    G = np.hstack((np.eye(K), solution.reshape(K, N-K)))
-    ber = test_G(G, train=False)
-    print(f"Generation = {ga_instance.generations_completed}")
-    print(f"Fitness    = {solution_fitness}")
-    print(f"Change in Fitness     = {change_in_fitness}")
-    print(f"BER value of best solution: {ber}")
-    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
-    end_g = time.time()
-    print(f"Generation Running Time: {end_g-start_g} [s]")
-    start_g = end_g
-    last_fitness = ga_instance.best_solution(
-        pop_fitness=ga_instance.last_generation_fitness)[1]
+    def mutation(self, offsprings):
+        """
+        Applies mutation to the offsprings.
 
+        Args:
+            offsprings (ndarray): The offsprings to be mutated.
+        """
+        mutation_mask = np.random.rand(*offsprings.shape) < self.p_mutation
+        offsprings[mutation_mask] ^= 1
 
-def test_known_matrix(code_type="LDPC", n=49, k=24):
-    G, H = Get_Generator_and_Parity(Code(code_type, n, k))
-    ber = test_G(G, H, train=False)
-    print(f"BER: {ber}")
-    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
-    ber = test_G(G, H, train=True)
-    print(f"BER: {ber}")
-    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
+    def run(self):
+        """
+        Runs the genetic algorithm for a specified number of generations.
 
-def test_known_matrix_2(code_type="LDPC", n=49, k=24):
-    G, H = Get_Generator_and_Parity(Code(code_type, n, k))
-    ber = test_G(G, H, train=False)
-    print(f"BER: {ber}")
-    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
-    ber = test_G(G, H, train=True)
-    print(f"BER: {ber}")
-    print(f"Negative natural logarithm of Bit Error Rate: {-np.log(ber)}")
+        This method performs the following steps for each generation:
+        1. Calculates the fitness of the current population.
+        2. Performs crossover to generate offspring.
+        3. Applies mutation to the offspring.
+        4. Selects the best offspring to replace the worst individuals in the population.
+        5. Ends the current generation and updates necessary variables.
+        6. Checks if the best solution has been found and terminates if so.
+        """
+        self.start_generation_time = time.time()
+        for i in range(self.num_generations):
+            self.fitness()
+            offsprings = self.crossover()
+            self.mutation(offsprings)
+            argsort_result = np.argsort(self.fitness_result)
+            offsprings_indices = argsort_result[: self.offspring_size]
+            self.population[offsprings_indices] = offsprings
+            self.end_generation(i)
+            self.fitness_result[offsprings_indices] = np.zeros(self.offspring_size)
+            if self.best_solution_fitness == self.max_fitness:
+                break
 
+    def end_generation(self, generations_index):
+        """
+        Perform end-of-generation operations and print relevant information.
+        """
+        change_in_fitness = self.best_solution_fitness - self.last_fitness
+        G = G_from_solution(self.best_solution, self.k)
+        ber = test_G(
+            G, self.sample_size * 10, self.sigma, self.snr, bp_iter=self.bp_iter
+        )
+        nlog = -np.log(ber)
+        if self.bests_nlog == [] or nlog > np.max(self.bests_nlog):
+            self.best_of_the_bests_sol = self.best_solution.copy()
+        self.bests_nlog.append(nlog)
+        print(f"Generation = {generations_index}")
+        print(f"Fitness    = {self.best_solution_fitness}")
+        print(f"Change in Fitness     = {change_in_fitness}")
+        print(f"BER value of best solution: {ber}")
+        print(f"Negative natural logarithm of Bit Error Rate: {nlog}")
+        end_generation_time = time.time()
+        print(
+            f"Generation Running Time: {end_generation_time - self.start_generation_time} [s]"
+        )
+        self.start_generation_time = end_generation_time
+        self.last_fitness = self.best_solution_fitness
+        generation_nlog = -np.log(self.fitness_result ** (-1 / self.gamma) - self.delta)
+        self.all_nlog.append(generation_nlog)
 
-def G_from_solution(solution):
-    return np.hstack((np.eye(K), solution.reshape(N - K, K).T))
+    @staticmethod
+    def load_from_file(filename):
+        """
+        Load a GeneticAlgorithm object from a file.
+        """
+        with open(filename, "rb") as file:
+            ga = pickle.load(file)
+        return ga
 
-
-if __name__ == '__main__':
-    # each matrix is a systematic matrix such that matrix.reshape((k, n)) is the systematic matrix
-    start = time.time()
-    num_initial_population = 100
-    sample_size = 1000
-    function_inputs = np.random.randint(
-        2, size=(K, sample_size))
-    initial_population = np.random.choice(
-        a=[0, 1], p=[0.8, 0.2], size=(num_initial_population, K*(N-K)))
-    channel_func = AWGN_channel
-    # test_known_matrix(code_type="LDPC", n=49, k=24)
-    ga_instance = pygad.GA(num_generations=5,
-                           num_parents_mating=50,
-                           sol_per_pop=20,
-                           initial_population=initial_population,
-                           gene_type=np.uint8,
-                           fitness_func=fitness_func,
-                           # crossover_type=crossover_func,
-                           mutation_type=mutation_func,
-                           on_generation=on_generation,
-                           crossover_type=crossover_func,
-                           # parallel_processing=['process', 2],
-                           parallel_processing=['thread', 4]
-                           )
-
-    # Running the GA to optimize the parameters of the function.
-    ga_instance.run()
-    # Returning the details of the best solution.
-    solution, solution_fitness, solution_idx = ga_instance.best_solution(ga_instance.last_generation_fitness)
-    G = G_from_solution(solution)
-    ber = test_G(G, train=False)
-    print(f"Parameters of the best solution : {solution}")
-    print(f"Generator matrix of best solution:\n{G}")
-    print(f"Fitness value of the best solution = {solution_fitness}")
-    print(f"BER value of best solution: {ber}")
-    print(f"Index of the best solution : {solution_idx}")
-    # print(f"{ np.sum(solution*function_inputs)}")
-    print(f"Running Time: {time.time() - start} [s]")
-    ga_instance.plot_fitness()
-    ga_instance.save("best_sol")
+    def dump_to_file(self, filename):
+        """
+        Dump the current object to a file using pickle.
+        """
+        with open(filename, "wb") as file:
+            pickle.dump(self, file)
