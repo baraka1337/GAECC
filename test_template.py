@@ -381,6 +381,14 @@ def test_template(param, folder="."):
 def summarize_reuslts_in_excel(
     dir_path="./", output_file_path="./best_results_summary.csv"
 ):
+    """
+    Summarizes the results of a genetic algorithm in an Excel file.
+
+    Args:
+        dir_path (str, optional): The directory path where the genetic algorithm result files are located. Defaults to "./".
+        output_file_path (str, optional): The file path to save the summary in CSV format. Defaults to "./best_results_summary.csv".
+    """
+    
     param = {
         "k": 24,
         "n": 49,
@@ -468,7 +476,14 @@ def summarize_reuslts_in_excel(
     print(f"Data has been written to {output_file_path}")
 
 def test_full(dir_path, output_file_path = "./best_results_summary_bp_iter_5_ran_with_bp_iter_50.csv"):
+    """
+    Run a full test on the given directory path and save the results to a CSV file.
 
+    Args:
+        dir_path (str): The directory path containing the pickle files to be tested.
+        output_file_path (str, optional): The file path to save the results to. Defaults to 
+        "./best_results_summary_bp_iter_5_ran_with_bp_iter_50.csv".
+    """
     param = {
         "k": 24,
         "n": 49,
@@ -500,8 +515,6 @@ def test_full(dir_path, output_file_path = "./best_results_summary_bp_iter_5_ran
             data.append(ga_data)
             print("-Log(ber) = " + str(best_nlog_ber))
             print("\n")
-
-
 
     # Get the header from the keys of the first dictionary
     header = data[0].keys()
