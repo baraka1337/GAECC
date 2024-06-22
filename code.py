@@ -105,7 +105,7 @@ def generate_parity_check_matrix(G):
 
     """
     k, n = G.shape
-    H = np.hstack((G[:, k:].T.astype(int) ^ 1, np.eye(n - k)))
+    H = np.hstack((G[:, k:].T, np.eye(n - k)))
     return H
 
 
