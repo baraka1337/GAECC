@@ -330,7 +330,7 @@ def test_13():
     test_template(param)
 
 
-def test_all():
+def test_all(folder="./results"):
     param = {
         "k": 24,
         "n": 49,
@@ -346,58 +346,20 @@ def test_all():
         "bp_iter": 5,
     }
 
-    for o_size in [800]:
-        for bp_iter in [5]:
-            for e in [5]:
-                for n, k in [(63, 45), (49, 24), (60, 52), (64, 32)]:
-                    param["k"] = k
-                    param["n"] = n
-                    param["ebn0"] = e
-                    param["p_mutation"] = 1 / (k * (n - k))
-                    param["offspring_size"] = o_size
-                    param["bp_iter"] = bp_iter
-                    # if e == 6 or (e == 5 and n == 64):
-                    #     param["sample_size"] = param["sample_size"]
-                    print(
-                        f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}, bp_iter={param['bp_iter']}"
-                    )
-                    test_template(param, folder="results")
-
     n_k = [(32, 11), (31, 16), (63, 45), (49, 24), (60, 52), (64, 32)]
-    ebn0 = [5, 4]
-    for o_size in [800, 700]:
-        for bp_iter in [50, 5]:
-            for e in ebn0:
-                for n, k in n_k:
-                    param["k"] = k
-                    param["n"] = n
-                    param["ebn0"] = e
-                    param["p_mutation"] = 1 / (k * (n - k))
-                    param["offspring_size"] = o_size
-                    param["bp_iter"] = bp_iter
-                    # if e == 6 or (e == 5 and n == 64):
-                    #     param["sample_size"] = param["sample_size"]
-                    print(
-                        f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}, bp_iter={param['bp_iter']}"
-                    )
-                    test_template(param, folder="results")
-
-    for o_size in [700]:
-        for bp_iter in [5]:
-            for e in [5]:
-                for n, k in [(63, 45), (49, 24), (60, 52), (64, 32)]:
-                    param["k"] = k
-                    param["n"] = n
-                    param["ebn0"] = e
-                    param["p_mutation"] = 1 / (k * (n - k))
-                    param["offspring_size"] = o_size
-                    param["bp_iter"] = bp_iter
-                    # if e == 6 or (e == 5 and n == 64):
-                    #     param["sample_size"] = param["sample_size"]
-                    print(
-                        f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}, bp_iter={param['bp_iter']}"
-                    )
-                    test_template(param, folder="results")
+    ebn0 = [4, 5, 6]
+    for bp_iter in [5, 50]:
+        for e in ebn0:
+            for n, k in n_k:
+                param["k"] = k
+                param["n"] = n
+                param["ebn0"] = e
+                param["p_mutation"] = 1 / (k * (n - k))
+                param["bp_iter"] = bp_iter
+                print(
+                    f"Running test for k={param['k']}, n={param['n']}, ebn0={param['ebn0']}, bp_iter={param['bp_iter']}"
+                )
+                test_template(param, folder=folder)
 
 
 def test_template(param, folder="."):
@@ -505,6 +467,51 @@ def summarize_reuslts_in_excel(
     df.to_csv(output_file_path)
     print(f"Data has been written to {output_file_path}")
 
+def test_full(dir_path, output_file_path = "./best_results_summary_bp_iter_5_ran_with_bp_iter_50.csv"):
+
+    param = {
+        "k": 24,
+        "n": 49,
+        "num_initial_population": 1000,
+        "sample_size": 1000,
+        "p_mutation": 0.01,
+        "num_generations": 100,
+        "ebn0": 4,
+        "num_parents_mating": 100,
+        "offspring_size": 800,
+        "delta": 1e-20,
+        "gamma": 7,
+    }
+    pattern = os.path.join(dir_path, '*.pickle')
+    data = []
+    for pkl_file in glob.iglob(pattern):
+        for bp_iter in [50, 5]:
+            print("Starting test on: " + pkl_file)
+            print(f"bp_iter: {bp_iter}")
+            ga = GA.load_from_file(pkl_file)
+            G = G_from_solution(ga.best_of_the_bests_sol, ga.k)
+            ber = test_G(G, ga.sample_size * 100, ga.sigma, ga.snr, bp_iter=bp_iter)
+            ga_data = {key: value for key, value in ga.__dict__.items() if key in param.keys() and key != "p_mutation"}
+            ga_data["avg_err_num"] = ga.p_mutation * ga.k * (ga.n - ga.k)
+            best_nlog_ber = -np.log(ber)
+            ga_data["ebn0"] = snr_to_EbN0(ga.snr, ga.k/ga.n)
+            ga_data["best_of_the_bests -Log(BER)"] = best_nlog_ber
+            ga_data["bp_iter_ran_with"] = bp_iter
+            data.append(ga_data)
+            print("-Log(ber) = " + str(best_nlog_ber))
+            print("\n")
+
+
+
+    # Get the header from the keys of the first dictionary
+    header = data[0].keys()
+
+    # Write the data to a CSV file
+    with open(output_file_path, mode='w', newline='') as file:
+        writer = csv.DictWriter(file, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(data)
+
 
 if __name__ == "__main__":
-    test_pickle()
+    test_all("./results")

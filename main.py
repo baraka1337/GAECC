@@ -193,8 +193,8 @@ class GA:
             G, self.sample_size * 10, self.sigma, self.snr, bp_iter=self.bp_iter
         )
         nlog = -np.log(ber)
-        if self.bests_nlog == [] or nlog < np.min(self.bests_nlog):
-            self.best_of_the_bests_sol = self.best_solution
+        if self.bests_nlog == [] or nlog > np.max(self.bests_nlog):
+            self.best_of_the_bests_sol = self.best_solution.copy()
         self.bests_nlog.append(nlog)
         print(f"Generation = {generations_index}")
         print(f"Fitness    = {self.best_solution_fitness}")
