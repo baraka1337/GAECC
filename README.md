@@ -18,18 +18,22 @@ To get started with the GAECC project, follow these steps:
 ```
 pip install -r requirements.txt
 ```
+
 ## Running tests
 
-To run the tests for the GAECC project, you can use the `rerun_test.sh` script. This script automates the process of running the test cases and provides a convenient way to validate the functionality of the code.
+To run the tests for the GAECC project, you have two options:
 
-The test cases are defined in the `test_template.py` file. This file contains various test scenarios that cover different aspects of the code's behavior. By running the tests, you can ensure that the code is functioning correctly and producing the expected results.
-
-In addition to validating the functionality of the code, the `test_template.py` file also includes useful functions to analyze the algorithm's performance. You can leverage these functions to gain insights into the performance of the genetic algorithm and make any necessary improvements.
-
-To execute the tests, simply run the following command in your terminal:
-
+1. If you have srun installed on your server and a Docker image from [this link](https://hub.docker.com/layers/itayerlich/gaecc/1.0/images/sha256-4765b60050c3f668a68444d10f8503cdc594459dd441cb75d79a89368487437c?context=repo), you can use the following command:
 ```
 ./rerun_test.sh
+```
+This script automates the process of running the test cases and provides a convenient way to validate the functionality of the code.
+
+2. If you are not using a server, you can simply run the `test_template.py` script. This file contains various test scenarios that cover different aspects of the code's behavior. By running the tests, you can ensure that the code is functioning correctly and producing the expected results.
+
+To execute the tests, navigate to the GAECC folder in your terminal and run the following command:
+```
+python test_template.py
 ```
 
 This will trigger the execution of the test cases and display the results in the terminal. Make sure to review the output to ensure that all tests pass successfully.
